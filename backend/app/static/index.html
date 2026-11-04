@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Teacher Agent</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <svg width="0" height="0" class="sprite" aria-hidden="true">
+    <defs>
+      <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+      <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z"/></symbol>
+      <symbol id="i-teams" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.4"/><path d="M15.5 14.2A4.8 4.8 0 0 1 21 19"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="m8 12.5 2.8 2.8L16.5 9"/></symbol>
+      <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.3 6.3l2.5 2.5M15.2 15.2l2.5 2.5M6.3 17.7l2.5-2.5M15.2 8.8l2.5-2.5"/></symbol>
+      <symbol id="i-brain" viewBox="0 0 24 24"><path d="M9 4.5a3 3 0 0 0-3 3v.3A3 3 0 0 0 4 10.6a3 3 0 0 0 1 4.9A3 3 0 0 0 9 19.5a2.5 2.5 0 0 0 3-1V6a2.5 2.5 0 0 0-3-1.5zM15 4.5a3 3 0 0 1 3 3v.3a3 3 0 0 1 2 2.8 3 3 0 0 1-1 4.9 3 3 0 0 1-4 4 2.5 2.5 0 0 1-3-1"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5.5c0 4.4 3 8.2 7 9.5 4-1.3 7-5.1 7-9.5V6z"/><path d="m9.5 9.5 5 5M14.5 9.5l-5 5"/></symbol>
+      <symbol id="i-log" viewBox="0 0 24 24"><path d="M12 7v5l3 2"/><circle cx="12" cy="12" r="8.5"/></symbol>
+      <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+      <symbol id="i-send" viewBox="0 0 24 24"><path d="M5 12 3.5 4.5 21 12 3.5 19.5z"/><path d="M5 12h7"/></symbol>
+    </defs>
+  </svg>
+  <div class="layout">
+    <nav class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="logo">T</div>
+        <div><div class="brand-name">Teacher Agent</div><div class="brand-sub">第二の自分 · Teams デモ</div></div>
+      </div>
+      <div class="nav-label">ワークスペース</div>
+      <a href="#dashboard" data-page="dashboard"><svg><use href="#i-home"/></svg><span>ダッシュボード</span></a>
+      <a href="#chat" data-page="chat"><svg><use href="#i-chat"/></svg><span>AI チャット</span></a>
+      <a href="#teams" data-page="teams"><svg><use href="#i-teams"/></svg><span>モック Teams</span></a>
+      <a href="#approvals" data-page="approvals"><svg><use href="#i-check"/></svg><span>承認待ち</span><span class="badge" id="badge-approvals"></span></a>
+      <div class="nav-label">学習と管理</div>
+      <a href="#proposals" data-page="proposals"><svg><use href="#i-spark"/></svg><span>改善提案</span><span class="badge" id="badge-proposals"></span></a>
+      <a href="#memory" data-page="memory"><svg><use href="#i-brain"/></svg><span>記憶・知識</span></a>
+      <a href="#prohibitions" data-page="prohibitions"><svg><use href="#i-shield"/></svg><span>禁止事項</span></a>
+      <a href="#audit" data-page="audit"><svg><use href="#i-log"/></svg><span>実行履歴</span></a>
+      <a href="#settings" data-page="settings"><svg><use href="#i-gear"/></svg><span>設定</span></a>
+      <div class="sidebar-foot" id="llm-pill"></div>
+    </nav>
+    <main id="main">
+      <header class="topbar">
+        <button id="toggle-sidebar" class="icon-btn" aria-label="サイドバー切り替え"><svg><use href="#i-menu"/></svg></button>
+        <div>
+          <h1 id="page-title"></h1>
+          <div class="page-sub" id="page-sub"></div>
+        </div>
+      </header>
+      <div id="toast" class="toast" hidden></div>
+      <section id="page"></section>
+    </main>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
