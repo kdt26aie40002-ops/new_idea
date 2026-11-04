@@ -7,6 +7,7 @@ untrusted_data タグで囲んで渡す。ただしこれは LLM への注意喚
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 UNTRUSTED_RULE = (
@@ -22,8 +23,11 @@ def untrusted(source: str, text: str) -> str:
 
 def persona_system(role: str, teacher_name: str, memories: dict[str, list[str]],
                    prohibitions: list[dict[str, Any]]) -> str:
+    today = datetime.now().astimezone()
     parts = [
         f"あなたは専門学校教員「{teacher_name}」の業務を支える AI エージェント（{role}）です。",
+        f"今日は {today:%Y年%m月%d日}（{'月火水木金土日'[today.weekday()]}）です。年や日付を推測で書かないでください。",
+        "出力全体をコードブロック（```）で囲まないでください。",
         "本人の知識・判断基準・話し方を再現して下書きを作ります。最終決定は常に本人が行います。",
         "メッセージを送信する権限はあなたにはありません。作るのは下書きだけです。",
         UNTRUSTED_RULE,

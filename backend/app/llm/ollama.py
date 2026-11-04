@@ -14,6 +14,7 @@ import httpx
 from .base import LLMRequest, LLMUnavailableError
 
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+_FENCE_RE = re.compile(r"^```[a-zA-Z]*\n(.*?)\n```$", re.DOTALL)
 
 
 class OllamaClient:
@@ -50,7 +51,10 @@ class OllamaClient:
             content = r.json()["message"]["content"]
         except (ValueError, KeyError, TypeError) as e:
             raise LLMUnavailableError("Ollama の応答形式が想定と異なります。") from e
-        return _THINK_RE.sub("", content).strip()
+        text = _THINK_RE.sub("", content).strip()
+        # 指示しても出力全体を ```markdown で囲むことがあるので外す
+        m = _FENCE_RE.match(text)
+        return m.group(1).strip() if m else text
 
     def health(self) -> dict[str, Any]:
         try:

@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from ..llm import LLMRequest
 from .context import AgentContext
 from .prompts import persona_system, untrusted
+
+
+def _local(iso: str) -> str:
+    """発言時刻を PC のローカル時刻で表示（LLM が年月日を推測しないように）。"""
+    try:
+        return f"{datetime.fromisoformat(iso).astimezone():%Y-%m-%d %H:%M}"
+    except ValueError:
+        return iso
 
 
 class SecretaryAgent:
@@ -23,8 +32,9 @@ class SecretaryAgent:
         conv = self.ctx.teams.get_conversation(conv_id)
         if conv is None:
             raise ValueError(f"会話が見つかりません: {conv_id}")
-        msgs = [{"sender": m["sender_name"], "text": m["text"]} for m in self.ctx.teams.get_messages(conv_id)]
-        body = "\n".join(f"{m['sender']}: {m['text']}" for m in msgs)
+        raw = self.ctx.teams.get_messages(conv_id)
+        msgs = [{"sender": m["sender_name"], "text": m["text"]} for m in raw]
+        body = "\n".join(f"[{_local(m['created_at'])}] {m['sender_name']}: {m['text']}" for m in raw)
         return conv, msgs, untrusted(f"teams:{conv_id}", body)
 
     def summarize(self, conv_id: str) -> str:
@@ -52,7 +62,8 @@ class SecretaryAgent:
                    "knowledge": mem["knowledge"], "preferences": mem["preference"]},
             messages=[{"role": "user", "content":
                        f"学生「{student}」からの次のメッセージに対する、{self.ctx.teacher_name()}としての返信文の下書きだけを書いてください。"
-                       f"前置きや説明は不要です。\n\n{untrusted('teams:' + conv['id'], question)}"}]))
+                       f"前置きや説明は不要です。Teams では送信者名が表示されるので、署名は書かないでください。"
+                       f"記憶にない事実（日付・範囲・ルールなど）は作らず、わからなければ確認すると書いてください。\n\n{untrusted('teams:' + conv['id'], question)}"}]))
         return text, mem["_ids"]
 
     def check_unanswered(self) -> dict[str, Any]:
