@@ -1,0 +1,17 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# ローカルデータ（学生情報・記憶・会話を含むため絶対にコミットしない）
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# 秘密情報
+.env
+.env.*
+*.pem
+*.key

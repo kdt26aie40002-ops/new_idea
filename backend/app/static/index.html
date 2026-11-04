@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Teacher Agent</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar" id="sidebar">
+      <div class="brand">Teacher Agent<small>第二の自分（Teams デモ）</small></div>
+      <a href="#dashboard" data-page="dashboard">ダッシュボード</a>
+      <a href="#chat" data-page="chat">AI チャット</a>
+      <a href="#teams" data-page="teams">モック Teams</a>
+      <a href="#approvals" data-page="approvals">承認待ち <span class="badge" id="badge-approvals"></span></a>
+      <a href="#proposals" data-page="proposals">改善提案 <span class="badge" id="badge-proposals"></span></a>
+      <a href="#memory" data-page="memory">記憶・知識</a>
+      <a href="#prohibitions" data-page="prohibitions">禁止事項</a>
+      <a href="#audit" data-page="audit">実行履歴</a>
+      <a href="#settings" data-page="settings">設定</a>
+      <div class="sidebar-foot" id="llm-pill"></div>
+    </nav>
+    <main id="main">
+      <header class="topbar">
+        <button id="toggle-sidebar" class="ghost" aria-label="サイドバー切り替え">☰</button>
+        <h1 id="page-title"></h1>
+      </header>
+      <div id="toast" class="toast" hidden></div>
+      <section id="page"></section>
+    </main>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
