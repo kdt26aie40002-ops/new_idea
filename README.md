@@ -6,6 +6,49 @@
 本物の Microsoft Teams の代わりにアプリ内の **モック Teams** を使うので、ブラウザだけで一通りの流れを試せます。
 AI はローカルで動く LLM（Ollama）を使い、データも PC の外には出ません。
 
+## はじめに：Ollama のダウンロード
+
+AI を動かすために、先に [Ollama](https://ollama.com) と AI モデルを用意します（Ollama が無くても、テンプレートで動く「デモ LLM」で流れだけは試せます）。
+
+**1. Ollama をインストールする**
+
+- **Windows**：[ollama.com/download](https://ollama.com/download) からインストーラー（`OllamaSetup.exe`）をダウンロードして実行します。
+  PowerShell で次のコマンドを使っても入れられます。
+
+  ```powershell
+  winget install --id Ollama.Ollama -e
+  ```
+
+- **macOS**：[ollama.com/download](https://ollama.com/download) からダウンロードして、アプリケーションフォルダに入れます。
+- **Linux**：
+
+  ```bash
+  curl -fsSL https://ollama.com/install.sh | sh
+  ```
+
+インストールすると Ollama がバックグラウンドで起動します（Windows はタスクトレイにアイコンが出ます）。
+`ollama` コマンドが見つからないと言われたら、ターミナルを開き直してください。
+
+**2. AI モデルをダウンロードする**（約 5.2GB。回線によって数分〜数十分かかります）
+
+```powershell
+ollama pull qwen3:8b
+```
+
+**3. 動いているか確かめる**
+
+```powershell
+ollama list        # qwen3:8b が表示されれば OK
+```
+
+ブラウザで http://127.0.0.1:11434 を開いて「Ollama is running」と出れば、アプリから使える状態です。
+
+**4. アプリで Ollama を選ぶ**
+
+下の「[起動](#起動)」の手順でアプリを開き、**設定 → AI モデル → 使用する LLM** で「Ollama（ローカル LLM）」を選んで保存します。サイドバーの下に「qwen3:8b 接続中」と出れば準備完了です。
+
+> メモリは 16GB 以上あると快適です。最初の 1 回はモデルの読み込みで 1 分ほどかかります。
+
 ![ダッシュボード](docs/images/dashboard.png)
 
 ## 主な機能
@@ -79,7 +122,7 @@ macOS / Linux は `python3 -m venv .venv`、`.venv/bin/python` に読み替え�
 設定画面で切り替えます。
 
 - **デモ LLM**（初期値）：テンプレートで文章を組み立てるだけで、推論はしません。画面に「デモ LLM」と表示されます。Ollama が無くても流れを確認できます。
-- **Ollama**（おすすめ）：[Ollama](https://ollama.com) をインストールし、`ollama pull qwen3:8b` を実行してから設定で選択します。
+- **Ollama**（おすすめ）：「[はじめに：Ollama のダウンロード](#はじめにollama-のダウンロード)」の手順で用意してから、設定で選択します。別のモデルを使うときは、`ollama pull <モデル名>` のあと設定の「モデル」に名前を入れます。
   - 初回はモデルの読み込みで 1 分ほどかかり、その後は 1 回あたり数秒〜十数秒です。
   - 接続できないときはエラーを表示します。デモ LLM や外部の AI に勝手に切り替えることはありません。
   - ローカル LLM なので、まれに事実と違う内容を書くことがあります。送信前に必ず承認画面で確認してください。
