@@ -29,6 +29,19 @@ class ChatIn(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
 
 
+class DashboardAiIn(BaseModel):
+    action: Literal["briefing", "insights", "unanswered", "summarize", "minutes", "material"]
+    conversation_id: str | None = Field(default=None, max_length=100)
+    topic: str = Field(default="", max_length=200)
+    kind: Literal["授業資料", "課題", "小テスト"] = "授業資料"
+
+
+DASHBOARD_LABELS = {
+    "briefing": "今日のブリーフィング", "insights": "学生の質問の傾向分析",
+    "unanswered": "学生からの未回答の質問を確認して",
+}
+
+
 class RatingIn(BaseModel):
     rating: Literal[1, -1]
     comment: str = Field(default="", max_length=1000)
@@ -136,19 +149,39 @@ def create_app(services: Services | None = None, data_dir: Path | None = None) -
     def chat_history() -> list[dict[str, Any]]:
         return _chat_rows()
 
+    def _save_exchange(text: str, result: Any, llm_name: str) -> dict[str, Any]:
+        meta = {"route": result.route, "agent": result.agent, "approval_ids": result.approval_ids,
+                "memory_ids": result.memory_ids, "llm": llm_name}
+        with s.db.tx() as c:
+            c.execute("INSERT INTO assistant_messages (role, text, created_at) VALUES ('user', ?, ?)",
+                      (text, now_iso()))
+            cur = c.execute("INSERT INTO assistant_messages (role, text, meta, created_at) "
+                            "VALUES ('assistant', ?, ?, ?)", (result.reply, dumps(meta), now_iso()))
+        return {"id": cur.lastrowid, "reply": result.reply, "meta": meta}
+
     @app.post("/api/chat")
     def chat(body: ChatIn) -> dict[str, Any]:
         history = [{"role": r["role"], "content": r["text"]} for r in _chat_rows()[-6:]]
         agent = s.agent()
         result = agent.handle(body.text, history)  # LLM 失敗時は 503 になり、何も保存しない
-        meta = {"route": result.route, "agent": result.agent, "approval_ids": result.approval_ids,
-                "memory_ids": result.memory_ids, "llm": agent.ctx.llm.name}
-        with s.db.tx() as c:
-            c.execute("INSERT INTO assistant_messages (role, text, created_at) VALUES ('user', ?, ?)",
-                      (body.text, now_iso()))
-            cur = c.execute("INSERT INTO assistant_messages (role, text, meta, created_at) "
-                            "VALUES ('assistant', ?, ?, ?)", (result.reply, dumps(meta), now_iso()))
-        return {"id": cur.lastrowid, "reply": result.reply, "meta": meta}
+        return _save_exchange(body.text, result, agent.ctx.llm.name)
+
+    @app.post("/api/dashboard/ai")
+    def dashboard_ai(body: DashboardAiIn) -> dict[str, Any]:
+        """ダッシュボードのワンクリック操作。結果は評価できるように AI チャットの履歴にも残す。"""
+        label = DASHBOARD_LABELS.get(body.action)
+        if label is None:
+            conv = s.teams.get_conversation(body.conversation_id or "")
+            if body.action == "material":
+                label = f"{body.topic}の{body.kind}を作って"
+            elif conv is None:
+                raise ValueError("会話を選んでください")
+            else:
+                label = f"「{conv['title']}」の{'議事録を作って' if body.action == 'minutes' else '要約'}"
+        agent = s.agent()
+        result = agent.run_action(body.action, label, conversation_id=body.conversation_id,
+                                  topic=body.topic, kind=body.kind)
+        return _save_exchange(f"［ダッシュボード］{label}", result, agent.ctx.llm.name)
 
     @app.post("/api/chat/{msg_id}/rating")
     def rate(msg_id: int, body: RatingIn) -> dict[str, Any]:

@@ -48,14 +48,112 @@ async function api(path, opts = {}) {
   return data;
 }
 
+// AI の出力（Markdown）を最低限の見出し・リスト・太字だけ整形する。
+// 学生の文章が混ざりうるので innerHTML は使わず、テキストノードで組み立てる。
+function md(text) {
+  const inline = (s) => s.split(/(\*\*[^*]+\*\*|`[^`]+`)/).filter(Boolean).map((part) =>
+    part.startsWith("**") && part.endsWith("**") && part.length > 4 ? h("strong", {}, part.slice(2, -2))
+      : part.startsWith("`") && part.endsWith("`") && part.length > 2 ? h("code", {}, part.slice(1, -1)) : part);
+  const root = h("div", { class: "md" });
+  let list = null;
+  for (const raw of text.split("\n")) {
+    const line = raw.trimEnd();
+    const head = line.match(/^(#{1,4})\s+(.*)$/);
+    const item = line.match(/^\s*(?:[-*・]|\d+[.)])\s+(\[[ xX]\]\s+)?(.*)$/);
+    if (item) {
+      const tag = /^\s*\d/.test(line) ? "ol" : "ul";
+      if (!list || list.tagName.toLowerCase() !== tag || /^\s{2,}/.test(raw) !== list._nested) {
+        list = h(tag, { start: tag === "ol" ? line.match(/\d+/)[0] : null });
+        list._nested = /^\s{2,}/.test(raw); root.append(list);
+      }
+      list.append(h("li", { class: item[1] ? "todo" + (/x/i.test(item[1]) ? " done" : "") : null }, inline(item[2])));
+      continue;
+    }
+    if (line.trim() && list && /^\s{2,}/.test(raw)) { list.lastChild?.append(h("br"), ...inline(line.trim())); continue; }
+    list = null;
+    if (head) root.append(h("h4", {}, inline(head[2])));
+    else if (line.trim()) root.append(h("p", {}, inline(line)));
+  }
+  return root;
+}
+
+// ---- 動きと手応え ----------------------------------------------------------
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+const coarsePointer = matchMedia("(pointer: coarse)");
+const EASE_OUT = "cubic-bezier(.22, 1, .36, 1)";
+
+// 触覚：指で操作する端末だけ、ごく短く震わせる（対応していない端末では何もしない）
+function haptic(pattern = 6) {
+  if (!coarsePointer.matches || !navigator.vibrate) return;
+  try { navigator.vibrate(pattern); } catch { /* 無視 */ }
+}
+document.addEventListener("pointerdown", (e) => {
+  if (e.pointerType === "touch" && e.target.closest("button:not(:disabled), a, .conv")) haptic(6);
+}, { passive: true });
+document.addEventListener("change", (e) => { if (e.target.matches?.('input[type="checkbox"]')) haptic(10); });
+
+// 映り込み：カーソルの位置をカードに渡し、ガラスの光沢を追従させる（1 フレームに 1 回だけ計算）
+let specEvent = null;
+document.addEventListener("pointermove", (e) => {
+  if (e.pointerType !== "mouse") return;
+  const first = !specEvent;
+  specEvent = e;
+  if (!first) return;
+  requestAnimationFrame(() => {
+    const ev = specEvent;
+    specEvent = null;
+    for (let el = ev.target.closest?.(".card, .ai-tile"); el; el = el.parentElement?.closest(".card, .ai-tile")) {
+      const r = el.getBoundingClientRect();
+      el.style.setProperty("--mx", `${ev.clientX - r.left}px`);
+      el.style.setProperty("--my", `${ev.clientY - r.top}px`);
+    }
+  });
+}, { passive: true });
+
+// 数字は 0 から数え上がる
+function countUp(el) {
+  const to = Number(el.textContent);
+  if (reducedMotion.matches || !Number.isInteger(to) || to <= 0) return;
+  const t0 = performance.now(), dur = 650 + Math.min(to, 20) * 15;
+  const step = (t) => {
+    const p = Math.min((t - t0) / dur, 1);
+    el.textContent = Math.round(to * (1 - Math.pow(1 - p, 4)));
+    if (p < 1) requestAnimationFrame(step);
+  };
+  el.textContent = "0";
+  requestAnimationFrame(step);
+}
+
+// 新しい画面のカードに、少しずつずらした登場アニメーションを付ける
+function animateIn(root) {
+  if (reducedMotion.matches) return;
+  const items = [];
+  for (const el of root.children) {
+    if (el.matches(".grid, .two-col, .teams")) items.push(...el.children); else items.push(el);
+  }
+  items.forEach((el, i) => { el.classList.add("enter"); el.style.setProperty("--i", Math.min(i, 10)); });
+  root.querySelectorAll(".ai-tile").forEach((el, i) => { el.classList.add("enter"); el.style.setProperty("--i", 5 + Math.min(i, 8)); });
+  root.querySelectorAll(".stat").forEach(countUp);
+}
+
 let toastTimer;
 function toast(msg, isError = false) {
   const t = $("#toast");
   t.textContent = msg;
   t.className = "toast" + (isError ? " error" : "");
   t.hidden = false;
+  t.style.animation = "none"; void t.offsetWidth; t.style.animation = "";  // 連続表示でも毎回現れ直す
+  haptic(isError ? [14, 60, 14] : 8);
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (t.hidden = true), isError ? 7000 : 3500);
+  toastTimer = setTimeout(hideToast, isError ? 7000 : 3500);
+}
+function hideToast() {
+  const t = $("#toast");
+  if (t.hidden) return;
+  clearTimeout(toastTimer);
+  t.classList.add("out");
+  t.addEventListener("animationend", () => { if (t.classList.contains("out")) t.hidden = true; }, { once: true });
 }
 
 async function guard(fn) {
@@ -103,14 +201,16 @@ pages.dashboard = {
   title: "ダッシュボード",
   sub: "今日の状況をひと目で",
   async render(root) {
-    const [st, approvals, audit] = await Promise.all([
+    const [st, approvals, audit, convs] = await Promise.all([
       api("/api/status"), api("/api/approvals?status=pending"), api("/api/audit?limit=6"),
+      api("/api/teams/conversations"),
     ]);
     const hour = new Date().getHours();
     const greet = hour < 11 ? "おはようございます" : hour < 18 ? "こんにちは" : "おつかれさまです";
     root.append(
       h("div", { class: "hero" },
-        h("h2", {}, `${greet}、佐藤先生`),
+        h("div", { class: "eyebrow" }, new Date().toLocaleDateString("ja-JP", { month: "long", day: "numeric", weekday: "long" })),
+        h("h2", {}, `${greet}、`, h("span", { class: "ai-word" }, "佐藤先生")),
         h("p", {}, st.unanswered ? `学生からの未回答の質問が ${st.unanswered} 件あります。返信案を用意しましょうか？`
           : "未回答の質問はありません。落ち着いた一日になりそうです。"),
         h("button", { onclick: () => { sessionStorage.setItem("prefill", "学生からの未回答の質問を確認して"); location.hash = "#chat"; } },
@@ -121,6 +221,7 @@ pages.dashboard = {
         statCard("spark", "", "改善提案", st.pending_proposals, "承認すると記憶に反映", "#proposals"),
         statCard("brain", "green", "AI", st.llm.ok ? "接続中" : "未接続",
           st.llm.provider === "demo" ? "デモ LLM" : `Ollama · ${st.llm.model}`, "#settings")),
+      this.aiPanel(st, convs),
       h("div", { class: "two-col" },
         h("div", { class: "card" }, h("h3", {}, "承認待ちの操作"),
           approvals.length ? approvals.slice(0, 5).map((a) =>
@@ -130,6 +231,83 @@ pages.dashboard = {
             h("div", { class: "empty" }, h("div", { class: "big" }, "✨"), "承認待ちはありません")),
         h("div", { class: "card" }, h("h3", {}, "最近のアクティビティ"), auditTable(audit, true))),
     );
+  },
+
+  // AI にワンクリックで頼める操作。結果は AI チャットの履歴にも残る（評価・続きの会話ができる）
+  aiPanel(st, convs) {
+    const result = h("div", { class: "ai-result", hidden: true });
+    const buttons = [];
+    let busy = false;
+    const run = (title, body, path = "/api/dashboard/ai") => guard(async () => {
+      if (busy) return;
+      busy = true;
+      buttons.forEach((b) => (b.disabled = true));
+      result.hidden = false;
+      result.classList.add("loading");
+      result.replaceChildren(h("div", { class: "row" }, h("b", {}, title), h("span", { class: "thinking" }, h("i"), h("i"), h("i"))),
+        h("div", { class: "muted" }, st.llm.provider === "ollama" ? "ローカル LLM で考えています（数秒〜1分ほど）…" : "作成中…"));
+      try {
+        const r = await api(path, { method: "POST", body });
+        const copy = h("button", { class: "ghost", onclick: () => guard(async () => {
+          await navigator.clipboard.writeText(r.reply); toast("コピーしました。");
+        }) }, "コピー");
+        result.replaceChildren(
+          h("div", { class: "row" }, h("b", {}, title), h("span", { class: "tag accent" }, r.meta.agent),
+            r.meta.llm === "demo" ? h("span", { class: "tag warn" }, "デモ LLM") : null, h("span", { class: "spacer" }),
+            h("button", { class: "ghost", onclick: () => { result.hidden = true; } }, "閉じる")),
+          h("div", { class: "ai-output" }, md(r.reply)),
+          h("div", { class: "row" }, copy,
+            r.meta.approval_ids.length ? h("button", { onclick: () => { location.hash = "#approvals"; } },
+              icon("check"), `承認待ちを確認（${r.meta.approval_ids.length} 件）`) : null,
+            h("button", { class: "ghost", onclick: () => { location.hash = "#chat"; } }, icon("chat"), "チャットで続ける"),
+            h("span", { class: "spacer" }), h("span", { class: "muted" }, "AI チャットの履歴にも保存しました")));
+        refreshBadges();
+      } catch (e) {
+        result.replaceChildren(h("span", { class: "tag danger" }, "エラー"), " ", e.message);
+      } finally {
+        buttons.forEach((b) => (b.disabled = false));
+        busy = false;
+        result.classList.remove("loading");
+      }
+    });
+    const btn = (label, onclick, cls = "") => { const b = h("button", { class: cls, onclick }, label); buttons.push(b); return b; };
+    const tile = ([iconId, tone], title, desc, ...controls) => h("div", { class: "ai-tile" },
+      h("div", { class: "ai-tile-head" }, h("span", { class: `ai-emoji ${tone}` }, icon(iconId)), h("b", {}, title)),
+      h("div", { class: "muted" }, desc), h("div", { class: "row ai-controls" }, ...controls));
+    const convSelect = (kinds) => h("select", {}, convs.filter((c) => kinds.includes(c.kind)).map((c) => h("option", { value: c.id }, c.title)));
+    const sumConv = convSelect(["chat", "channel", "meeting"]);
+    const meeting = convSelect(["meeting"]);
+    const topic = h("input", { placeholder: "例：for文", class: "spacer" });
+    const kind = h("select", {}, ["授業資料", "課題", "小テスト"].map((k) => h("option", { value: k }, k)));
+    const ask = h("input", { placeholder: "例：レポートの提出期限は？", class: "spacer" });
+    const askRun = () => ask.value.trim() && run("AI に質問", { text: ask.value.trim() }, "/api/chat");
+    const materialRun = () => {
+      if (!topic.value.trim()) return toast("テーマを入力してください。", true);
+      run(`${kind.value}：${topic.value.trim()}`, { action: "material", topic: topic.value.trim(), kind: kind.value });
+    };
+    ask.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) askRun(); });
+    topic.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) materialRun(); });
+
+    return h("div", { class: "card ai-card" },
+      h("div", { class: "row" }, h("h3", {}, h("span", { class: "ai-word" }, "AI"), " でできること"), h("span", { class: "spacer" }),
+        h("span", { class: "muted" }, "送信は必ず承認待ちを通ります")),
+      h("div", { class: "ai-grid" },
+        tile(["calendar", "red"], "今日のブリーフィング", "未回答の質問・承認待ち・締め切りから、今日やることを優先順に",
+          btn("まとめる", () => run("今日のブリーフィング", { action: "briefing" }))),
+        tile(["mail", "blue"], "未回答の質問に返信案", `${st.unanswered} 件の質問に下書きを作り、承認待ちに入れます`,
+          btn("返信案を作る", () => run("未回答の質問への返信案", { action: "unanswered" }))),
+        tile(["chart", "purple"], "質問の傾向分析", "学生のつまずき・登録すべき知識・クラスへの連絡案",
+          btn("分析する", () => run("学生の質問の傾向分析", { action: "insights" }))),
+        tile(["list", "orange"], "会話を要約", "Teams のチャット・チャネル・会議を箇条書きに",
+          sumConv, btn("要約", () => run(`要約：${sumConv.selectedOptions[0]?.text || ""}`, { action: "summarize", conversation_id: sumConv.value }))),
+        tile(["doc", "green"], "議事録を作成", "参加者・決定事項・ToDo を整理",
+          meeting, btn("作成", () => run(`議事録：${meeting.selectedOptions[0]?.text || ""}`, { action: "minutes", conversation_id: meeting.value }))),
+        tile(["book", "pink"], "教材をつくる", "授業資料・課題・小テストの下書き", kind, topic, btn("作成", materialRun)),
+        h("div", { class: "ai-tile wide" },
+          h("div", { class: "ai-tile-head" }, h("span", { class: "ai-emoji teal" }, icon("chat")), h("b", {}, "ひとこと質問"),
+            h("span", { class: "muted" }, "記憶をもとに答えます")),
+          h("div", { class: "row ai-controls" }, ask, btn("聞く", askRun)))),
+      result);
   },
 };
 
@@ -160,7 +338,7 @@ pages.chat = {
 
     const renderMsg = (m) => {
       const isMe = m.role === "user";
-      const bubble = h("div", { class: "bubble" }, h("div", { class: "pre" }, m.text));
+      const bubble = h("div", { class: "bubble" }, isMe ? h("div", { class: "pre" }, m.text) : md(m.text));
       if (!isMe) {
         const meta = m.meta || {};
         bubble.append(h("div", { class: "bubble-meta" },
@@ -219,7 +397,7 @@ pages.chat = {
         }) }, "🗑 履歴を消去") : null),
       log,
       h("div", { class: "composer" }, input, send)));
-    setTimeout(() => window.scrollTo(0, document.body.scrollHeight), 0);
+    this.mounted = () => window.scrollTo({ top: document.body.scrollHeight, behavior: "instant" });
   },
 };
 
@@ -467,10 +645,15 @@ pages.settings = {
     const setTheme = (v) => { themeVal = v; [...theme.children].forEach((b) => b.classList.toggle("on", b.dataset.v === v)); updateUi(); };
     [["system", "🖥 自動"], ["light", "☀️ ライト"], ["dark", "🌙 ダーク"]].forEach(([v, l]) =>
       theme.append(h("button", { "data-v": v, class: themeVal === v ? "on" : "", onclick: () => setTheme(v) }, l)));
-    const accent = h("input", { type: "color", value: ui.accent || "#5b5bd6" });
-    const swatches = h("div", { class: "row" }, ["#5b5bd6", "#0ea5e9", "#10b981", "#f97316", "#ec4899", "#8b5cf6"].map((c) => {
-      const b = h("button", { class: "ghost", title: c, onclick: () => { accent.value = c; updateUi(); } }, "●");
-      b.style.color = c;
+    const accent = h("input", { type: "color", value: ui.accent || "#0071e3" });
+    const current = (ui.accent || "#0071e3").toLowerCase();
+    const swatches = h("div", { class: "row swatches" }, ["#0071e3", "#4f5bd5", "#7a4fd6", "#0a7d8c", "#3a3a3c"].map((c) => {
+      const b = h("button", { class: "swatch", title: c, "aria-label": `アクセントカラー ${c}`, "aria-pressed": String(c === current),
+        onclick: () => {
+          accent.value = c; updateUi();
+          b.parentElement.querySelectorAll(".swatch").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+        } });
+      b.style.setProperty("--c", c);
       return b;
     }), accent);
     const font = h("input", { type: "range", min: 13, max: 20, value: ui.fontSize || 15 });
@@ -502,12 +685,24 @@ pages.settings = {
 };
 
 // ---- ルーティング ----------------------------------------------------------
+let currentPage = null;
 async function navigate() {
   const name = location.hash.slice(1) || "dashboard";
   const page = pages[name] || pages.dashboard;
+  // 同じ画面の再描画（承認・絞り込みなど）は動かさない。画面を移ったときだけ入れ替えの動きを付ける
+  const moved = currentPage !== page;
+  currentPage = page;
   document.querySelectorAll(".sidebar a").forEach((a) => a.classList.toggle("active", a.dataset.page === name));
   $("#page-title").textContent = page.title;
   $("#page-sub").textContent = page.sub || "";
+  let leaving = null;
+  if (moved && !reducedMotion.matches) {
+    $(".topbar").animate([{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }],
+      { duration: 500, easing: EASE_OUT });
+    const old = $("#page").querySelectorAll(".enter");
+    old.forEach((el) => el.classList.add("leave"));
+    if (old.length) leaving = sleep(140);  // 前の画面が消えるのを待つ間に、次の画面を組み立てる
+  }
   const root = h("div");
   try {
     if (!Object.keys(KIND_LABELS).length) {
@@ -518,19 +713,36 @@ async function navigate() {
   } catch (e) {
     root.append(h("div", { class: "card" }, h("span", { class: "tag danger" }, "エラー"), " ", e.message));
   }
+  await leaving;
   $("#page").replaceChildren(root);
+  if (moved) { window.scrollTo({ top: 0, behavior: "instant" }); animateIn(root); }
+  // 画面に入ってから行う処理（チャットを最下部まで送るなど）。DOM に入る前に実行すると効かない
+  page.mounted?.();
+  page.mounted = null;
+}
+
+// 数が変わったときだけ、バッジを軽く弾ませる
+function setBadge(el, n) {
+  const v = n ? String(n) : "";
+  if (el.textContent === v) return;
+  el.textContent = v;
+  if (v && !reducedMotion.matches) {
+    el.animate([{ transform: "scale(.5)" }, { transform: "scale(1.18)", offset: .55 }, { transform: "scale(1)" }],
+      { duration: 520, easing: EASE_OUT });
+  }
 }
 
 async function refreshBadges() {
   try {
     const st = await api("/api/status");
-    $("#badge-approvals").textContent = st.pending_approvals || "";
-    $("#badge-proposals").textContent = st.pending_proposals || "";
+    setBadge($("#badge-approvals"), st.pending_approvals);
+    setBadge($("#badge-proposals"), st.pending_proposals);
     $("#llm-pill").replaceChildren(h("span", { class: "dot " + (st.llm.ok ? "ok" : "bad") }),
       h("span", {}, st.llm.provider === "demo" ? "デモ LLM" : st.llm.model, h("br"), st.llm.ok ? "接続中" : "未接続"));
   } catch { /* サーバー停止中など */ }
 }
 
+$("#toast").addEventListener("click", hideToast);
 $("#toggle-sidebar").addEventListener("click", () => {
   const ui = loadUi(); ui.sidebarHidden = !ui.sidebarHidden; saveUi(ui); applyUi(ui);
 });

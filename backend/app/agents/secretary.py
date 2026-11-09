@@ -66,6 +66,47 @@ class SecretaryAgent:
                        f"記憶にない事実（日付・範囲・ルールなど）は作らず、わからなければ確認すると書いてください。\n\n{untrusted('teams:' + conv['id'], question)}"}]))
         return text, mem["_ids"]
 
+    def briefing(self) -> str:
+        """今日やることを、未回答の質問・承認待ち・記憶の予定から優先順にまとめる。"""
+        teacher = self.ctx.settings.teacher_id
+        unanswered = [{"student": i["messages"][-1]["sender_name"], "text": i["messages"][-1]["text"]}
+                      for i in self.ctx.teams.unanswered_questions(teacher)]
+        pending = self.ctx.gateway.pending_summaries()
+        knowledge = [m["content"] for m in self.ctx.memory.list("knowledge")]
+        system, _ = self._system("今日の予定 締め切り 期限")
+        questions = "\n".join(f"- {q['student']}: {q['text']}" for q in unanswered) or "なし"
+        data = "\n".join([
+            "## 学生からの未回答の質問", untrusted("teams:unanswered", questions),
+            "## 承認待ちの送信", "\n".join(f"- {p}" for p in pending) or "なし",
+            "## 予定・締め切りに関する記憶", "\n".join(f"- {k}" for k in knowledge) or "なし",
+        ])
+        return self.ctx.llm.complete(LLMRequest(
+            system=system, task="briefing",
+            hints={"unanswered": unanswered, "pending": pending, "knowledge": knowledge},
+            messages=[{"role": "user", "content":
+                       "次の情報から、今日やるべきことを優先度の高い順に 3〜6 項目の Markdown のチェックリストで書いてください。"
+                       "各項目に理由を一言添え、最後に近い締め切りを日付順に挙げてください。"
+                       f"情報にない予定は作らないでください。\n\n{data}"}]))
+
+    def insights(self) -> str:
+        """学生の発言全体から、よくある質問・つまずき・先回りの連絡案をまとめる。"""
+        msgs = []
+        for c in self.ctx.teams.list_conversations():
+            if c["kind"] == "meeting":
+                continue
+            msgs += [{"sender": m["sender_name"], "text": m["text"], "where": c["title"]}
+                     for m in self.ctx.teams.get_messages(c["id"]) if m["sender_role"] == "student"]
+        system, _ = self._system(" ".join(m["text"] for m in msgs)[:400])
+        body = "\n".join(f"[{m['where']}] {m['sender']}: {m['text']}" for m in msgs)
+        return self.ctx.llm.complete(LLMRequest(
+            system=system, task="insights", hints={"messages": msgs},
+            messages=[{"role": "user", "content":
+                       "次の学生の発言全体を分析し、Markdown で次の 3 つを書いてください。\n"
+                       "1. よく聞かれていること・つまずいている点（件数の目安つき）\n"
+                       "2. 記憶に登録しておくと返信が楽になりそうな知識\n"
+                       "3. クラス全体に先回りして伝えるとよい連絡の文案\n\n"
+                       f"{untrusted('teams:students', body)}"}]))
+
     def check_unanswered(self) -> dict[str, Any]:
         """未回答の質問ごとに返信案を作り、送信を承認キューに入れる（送信はしない）。"""
         proposed, skipped = [], []

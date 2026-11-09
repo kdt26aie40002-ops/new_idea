@@ -81,3 +81,40 @@ def test_rating_creates_feedback(client):
     mid = client.post("/api/chat", json={"text": "こんにちは"}).json()["id"]
     assert client.post(f"/api/chat/{mid}/rating", json={"rating": -1, "comment": "短く"}).status_code == 200
     assert client.get("/api/feedback").json()[0]["rating"] == -1
+
+
+@pytest.mark.parametrize("body", [
+    {"action": "briefing"},
+    {"action": "insights"},
+    {"action": "summarize", "conversation_id": "ch-2a"},
+    {"action": "minutes", "conversation_id": "m-1102"},
+    {"action": "material", "topic": "for文", "kind": "小テスト"},
+])
+def test_dashboard_ai_actions(client, body):
+    r = client.post("/api/dashboard/ai", json=body)
+    assert r.status_code == 200, r.text
+    assert r.json()["reply"]
+    assert client.get("/api/chat").json()[0]["text"].startswith("［ダッシュボード］")
+
+
+def test_dashboard_unanswered_only_proposes(client):
+    r = client.post("/api/dashboard/ai", json={"action": "unanswered"})
+    assert len(r.json()["meta"]["approval_ids"]) == 3
+    assert all(a["status"] in ("pending", "blocked") for a in client.get("/api/approvals").json())
+
+
+def test_dashboard_briefing_lists_pending(client):
+    client.post("/api/dashboard/ai", json={"action": "unanswered"})
+    reply = client.post("/api/dashboard/ai", json={"action": "briefing"}).json()["reply"]
+    assert "承認待ち" in reply and "11/14" in reply
+
+
+@pytest.mark.parametrize("body", [
+    {"action": "summarize"},
+    {"action": "summarize", "conversation_id": "nope"},
+    {"action": "material", "topic": " "},
+    {"action": "send_message"},
+    {"action": "material", "topic": "x", "kind": "成績表"},
+])
+def test_dashboard_ai_rejects_bad_input(client, body):
+    assert client.post("/api/dashboard/ai", json=body).status_code in (400, 422)

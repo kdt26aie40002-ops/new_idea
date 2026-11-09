@@ -109,6 +109,32 @@ class DemoLLM:
             lines += ["", "## 参考にした記憶"] + [f"- {_short(k, 60)}" for k in h["knowledge"]]
         return apply_preferences("\n".join(lines), h.get("preferences") or [])
 
+    def _briefing(self, h: dict[str, Any]) -> str:
+        unanswered, pending = h.get("unanswered") or [], h.get("pending") or []
+        lines = ["## 今日やること"]
+        if pending:
+            lines.append(f"- [ ] 承認待ちの返信 {len(pending)} 件を確認して送信する（学生が返事を待っています）")
+        if unanswered:
+            names = "、".join(f"{q['student']}さん" for q in unanswered)
+            lines.append(f"- [ ] 未回答の質問に返信案を作る：{names}")
+        lines.append("- [ ] 改善提案と記憶を見直す（返信の質を上げるため）")
+        dated = [k for k in h.get("knowledge") or [] if re.search(r"\d+/\d+", k)]
+        if dated:
+            lines += ["", "## 近い締め切り・予定"] + [f"- {_short(k, 70)}" for k in dated]
+        lines.append("\n（デモ LLM のため、優先順位の判断はしていません）")
+        return "\n".join(lines)
+
+    def _insights(self, h: dict[str, Any]) -> str:
+        msgs = h.get("messages") or []
+        questions = [m for m in msgs if re.search(r"[?？]|ですか|ますか", m["text"])]
+        lines = ["## よく聞かれていること", f"- 学生の発言 {len(msgs)} 件のうち、質問とみられるもの {len(questions)} 件"]
+        lines += [f"- {m['sender']}（{m['where']}）：{_short(m['text'], 50)}" for m in questions]
+        lines += ["", "## 記憶に登録しておくとよい知識",
+                  "- 質問に出てきた締め切り・範囲・ルールを「知識」として登録すると、返信案に使われます",
+                  "", "## クラスへの連絡案", "- 質問の多い項目をまとめて、クラス連絡チャネルで先に案内しましょう",
+                  "\n（デモ LLM のため、内容の分析は行っていません）"]
+        return "\n".join(lines)
+
     def _improve(self, h: dict[str, Any]) -> str:
         """修正前後の差分から改善案を JSON 配列で返す（ヒューリスティック）。"""
         original, revised = h.get("original", ""), h.get("revised") or ""
