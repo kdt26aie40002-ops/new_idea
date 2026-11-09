@@ -59,12 +59,7 @@
 [hidden] { display: none !important; }
 html { background: var(--bg); }
 body {
-  margin: 0; color: var(--text);
-  background:
-    radial-gradient(1100px 600px at 100% -10%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 60%),
-    radial-gradient(900px 600px at -10% 110%, color-mix(in srgb, var(--accent-2) 6%, transparent), transparent 60%),
-    var(--bg);
-  background-attachment: fixed;
+  margin: 0; color: var(--text); background: transparent;
   font-size: var(--font-size); line-height: 1.6; letter-spacing: -.003em;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Helvetica Neue",
     "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif;
@@ -178,14 +173,6 @@ a.card:hover { transform: scale(1.015); box-shadow: var(--shadow-lg); }
 .empty .big { font-size: 2em; margin-bottom: 6px; }
 
 /* ===== ダッシュボードの AI パネル（Apple Intelligence 風の光る縁） ===== */
-.ai-card {
-  position: relative; border: 1.5px solid transparent;
-  background: linear-gradient(var(--panel-solid), var(--panel-solid)) padding-box, var(--glow) border-box;
-}
-.ai-card::before {
-  content: ""; position: absolute; inset: 10px; z-index: -1; border-radius: inherit;
-  background: var(--glow); filter: blur(32px); opacity: .14;
-}
 .ai-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; margin-top: 4px; }
 .ai-tile {
   display: flex; flex-direction: column; gap: 6px; padding: 16px; border-radius: 16px;
@@ -204,9 +191,6 @@ a.card:hover { transform: scale(1.015); box-shadow: var(--shadow-lg); }
 .ai-controls input { min-width: 0; }
 .ai-result { margin-top: 18px; padding: 18px 20px; border-radius: 16px; background: var(--sunken); display: grid; gap: 12px;
   animation: rise .35s var(--ease); }
-.ai-result.loading { background: linear-gradient(var(--sunken), var(--sunken)) padding-box, var(--glow) border-box;
-  border: 1.5px solid transparent; animation: pulse 1.6s ease-in-out infinite; }
-@keyframes pulse { 50% { opacity: .7; } }
 .ai-output { max-height: 480px; overflow-y: auto; line-height: 1.75; }
 
 /* ===== フォーム ===== */
@@ -317,12 +301,10 @@ pre, .pre { white-space: pre-wrap; word-break: break-word; margin: 0; font-famil
 .tmsg .pre { margin-top: 2px; }
 
 /* 承認カード */
-.approval { position: relative; padding-left: 28px; }
-.approval::before { content: ""; position: absolute; left: 12px; top: 22px; bottom: 22px; width: 4px; border-radius: 2px; background: var(--warn); }
-.approval.executed::before { background: var(--ok); }
-.approval.blocked::before, .approval.failed::before { background: var(--danger); }
-.approval.rejected { opacity: .7; }
-.approval.rejected::before { background: var(--fill-strong); }
+.approval { --bar: var(--warn); }
+.approval.executed { --bar: var(--ok); }
+.approval.blocked, .approval.failed { --bar: var(--danger); }
+.approval.rejected { --bar: var(--fill-strong); opacity: .7; }
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 5px 16px; font-size: .85em; margin: 14px 0;
   padding: 14px 16px; border-radius: 14px; background: var(--sunken); }
 .kv dt { color: var(--muted); }
@@ -349,12 +331,7 @@ tbody tr:hover td { background: var(--sunken); }
 .toast.error { background: var(--danger); color: #fff; }
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 12px) scale(.97); } to { opacity: 1; transform: translate(-50%, 0); } }
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-#page > div { animation: fade .45s var(--ease); }
-@keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
-@media (prefers-reduced-motion: reduce) {
-  *, *::before { animation: none !important; transition: none !important; }
-}
 
 /* ===== スマホ幅 ===== */
 @media (max-width: 860px) {
@@ -388,3 +365,263 @@ tbody tr:hover td { background: var(--sunken); }
 
 /* 教材タイルのテーマ入力が潰れないように */
 .ai-controls input { flex: 1 1 140px; }
+
+/* =====================================================================
+   素材と動き：ガラス・縁・光・ばねの動き・押した手応え
+   ===================================================================== */
+:root {
+  /* ガラス：半透明の面 ＋ ぼかし。後ろの色の広がりが透けて見える */
+  --glass: rgba(255, 255, 255, .56);
+  --glass-inner: rgba(255, 255, 255, .5);
+  --glass-blur: blur(28px) saturate(185%);
+  /* 縁：上辺がいちばん明るく、側面で消え、下辺でわずかに戻る（厚みのある板の縁の映り込み） */
+  --rim: linear-gradient(165deg, rgba(255, 255, 255, .95), rgba(255, 255, 255, .4) 28%,
+    rgba(255, 255, 255, .06) 62%, rgba(255, 255, 255, .45));
+  --hi: rgba(255, 255, 255, .85);
+  --edge-out: rgba(0, 0, 0, .07);
+  --spec: rgba(255, 255, 255, .75);
+  --ambient: 1;
+  --glass-shadow: 0 1px 1px rgba(0, 0, 0, .02), 0 6px 16px -8px rgba(0, 0, 0, .08), 0 24px 48px -24px rgba(0, 0, 0, .14);
+  --glass-shadow-up: 0 2px 4px rgba(0, 0, 0, .03), 0 14px 28px -12px rgba(0, 0, 0, .12), 0 36px 72px -28px rgba(0, 0, 0, .22);
+  /* 動き：ease-out は消える・現れる動き、spring は手で触れて動くもの */
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
+  --ease-in: cubic-bezier(.4, 0, 1, 1);
+  --spring: cubic-bezier(.34, 1.36, .64, 1);
+}
+@supports (transition-timing-function: linear(0, 1)) {
+  :root {
+    /* 減衰の強いばね（行き過ぎ約 3%）。iOS の標準的な戻りに近い */
+    --spring: linear(0, .0326, .1199 4.6%, .2422, .3863 10%, .6939 16.9%, .8126 20.3%, .9044 23.7%,
+      .9683 27.1%, 1.0092 30.6%, 1.0303 34.1%, 1.0364 37.6%, 1.0326 41.2%, 1.0144 48.8%, 1.0013 57.4%, .997 66.6%, 1);
+  }
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --glass: rgba(28, 28, 32, .58); --glass-inner: rgba(255, 255, 255, .045);
+    --rim: linear-gradient(165deg, rgba(255, 255, 255, .26), rgba(255, 255, 255, .08) 28%,
+      rgba(255, 255, 255, .02) 62%, rgba(255, 255, 255, .1));
+    --hi: rgba(255, 255, 255, .08); --edge-out: rgba(0, 0, 0, .55); --spec: rgba(255, 255, 255, .07); --ambient: .8;
+    --glass-shadow: 0 8px 24px -12px rgba(0, 0, 0, .7), 0 28px 56px -28px rgba(0, 0, 0, .8);
+    --glass-shadow-up: 0 12px 32px -12px rgba(0, 0, 0, .8), 0 40px 80px -30px rgba(0, 0, 0, .9);
+  }
+}
+:root[data-theme="dark"] {
+  --glass: rgba(28, 28, 32, .58); --glass-inner: rgba(255, 255, 255, .045);
+  --rim: linear-gradient(165deg, rgba(255, 255, 255, .26), rgba(255, 255, 255, .08) 28%,
+    rgba(255, 255, 255, .02) 62%, rgba(255, 255, 255, .1));
+  --hi: rgba(255, 255, 255, .08); --edge-out: rgba(0, 0, 0, .55); --spec: rgba(255, 255, 255, .07); --ambient: .8;
+  --glass-shadow: 0 8px 24px -12px rgba(0, 0, 0, .7), 0 28px 56px -28px rgba(0, 0, 0, .8);
+  --glass-shadow-up: 0 12px 32px -12px rgba(0, 0, 0, .8), 0 40px 80px -30px rgba(0, 0, 0, .9);
+}
+
+/* --- 背景：ガラス越しに見える色の広がり（固定・静止。動かすと全ガラスの再計算でカクつく） --- */
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: var(--ambient);
+  background:
+    radial-gradient(42vw 42vw at 92% 2%, color-mix(in srgb, var(--accent-3) 28%, transparent), transparent 70%),
+    radial-gradient(38vw 38vw at 4% 96%, color-mix(in srgb, var(--accent-2) 22%, transparent), transparent 70%),
+    radial-gradient(34vw 30vw at 55% 48%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 70%);
+}
+html { -webkit-tap-highlight-color: transparent; scroll-behavior: smooth; }
+
+/* --- ガラスの面 --- */
+.card, .composer, .toast {
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+  border: 0; box-shadow: 0 0 0 .5px var(--edge-out), var(--glass-shadow);
+}
+.card { position: relative; isolation: isolate; transition: transform .6s var(--spring), box-shadow .5s var(--ease-out); }
+.card.note { backdrop-filter: none; -webkit-backdrop-filter: none; }
+.sidebar {
+  background: color-mix(in srgb, var(--glass) 70%, transparent);
+  backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+  border-right: 0; box-shadow: inset -.5px 0 0 var(--edge-out), inset -1px 0 0 var(--hi);
+}
+
+/* --- 縁：上から差す光の細い輪郭（内側 1px をマスクでくり抜く） --- */
+.card::before, .composer::before, .toast::before, .ai-result::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none;
+  background: var(--rim);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+}
+.card.note::before { display: none; }
+
+/* --- 映り込み：カーソルの位置に光が追従する（文字より奥、面より手前） --- */
+.card::after, .ai-tile::after {
+  content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: radial-gradient(380px circle at var(--mx, 50%) var(--my, -30%), var(--spec), transparent 62%);
+  opacity: 0; transition: opacity .6s var(--ease-out);
+}
+.card:hover::after, .ai-tile:hover::after { opacity: 1; }
+
+/* --- 持ち上がるカード（押せるもの） --- */
+a.card:hover { transform: translateY(-3px); box-shadow: 0 0 0 .5px var(--edge-out), var(--glass-shadow-up); }
+a.card:active { transform: translateY(-1px) scale(.985); transition-duration: .12s; }
+
+/* --- AI パネル：縁だけがアクセントの光。外側にごく薄く色がにじむ --- */
+.ai-card { box-shadow: 0 0 0 .5px var(--edge-out), var(--glass-shadow),
+  0 22px 60px -26px color-mix(in srgb, var(--accent) 50%, transparent); }
+.ai-card::before { padding: 1.5px; background: var(--glow); opacity: .85; }
+.ai-tile {
+  position: relative; isolation: isolate; background: var(--glass-inner);
+  box-shadow: inset 0 0 0 .5px var(--edge-out), inset 0 1px 0 var(--hi);
+  transition: transform .55s var(--spring), box-shadow .4s var(--ease-out);
+}
+.ai-tile:hover { transform: translateY(-2px);
+  box-shadow: inset 0 0 0 .5px var(--edge-out), inset 0 1px 0 var(--hi), 0 12px 28px -14px rgba(0, 0, 0, .18); }
+.ai-tile:has(button:active) { transform: scale(.99); transition-duration: .12s; }
+
+/* AI の作業中：縁を光が一周し、内側にやわらかい光がにじむ。題名は光が走る */
+@property --angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+.ai-result { position: relative; isolation: isolate; background: var(--glass-inner);
+  box-shadow: inset 0 0 0 .5px var(--edge-out); animation: enter .6s var(--spring) backwards; }
+.ai-result.loading::before { padding: 1.5px; animation: spin 2.4s linear infinite;
+  background: conic-gradient(from var(--angle), var(--accent-3), var(--accent), var(--accent-2), var(--accent-3)); }
+.ai-result.loading::after {
+  content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: conic-gradient(from var(--angle), var(--accent-3), var(--accent), var(--accent-2), var(--accent-3));
+  filter: blur(22px); opacity: .22; animation: spin 2.4s linear infinite;
+}
+.ai-result.loading > .row b {
+  background: linear-gradient(90deg, var(--text) 35%, var(--accent-3) 50%, var(--text) 65%) 0 0 / 250% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer 1.8s linear infinite;
+}
+@keyframes spin { to { --angle: 360deg; } }
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+
+/* --- ボタン：押すと沈み、離すとばねで戻る --- */
+button {
+  user-select: none; touch-action: manipulation;
+  transition: transform .55s var(--spring), filter .25s var(--ease-out), box-shadow .3s var(--ease-out),
+    background-color .25s var(--ease-out), opacity .25s;
+}
+button:not(.ghost, .danger, .chip, .rate, .icon-btn, .segment button) {
+  box-shadow: 0 4px 12px -6px color-mix(in srgb, var(--accent) 70%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, .35), inset 0 -1px 0 rgba(0, 0, 0, .1), inset 0 0 0 .5px rgba(255, 255, 255, .15);
+}
+button:hover:not(:disabled) { filter: brightness(1.06); }
+button:active:not(:disabled) { transform: scale(.95); filter: brightness(.95); transition-duration: .08s; }
+button.ghost, button.danger, .icon-btn { background-color: var(--fill); box-shadow: inset 0 1px 0 var(--hi); }
+.chip { background: var(--glass); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: 0 0 0 .5px var(--edge-out), inset 0 1px 0 var(--hi), var(--shadow); }
+.chip:hover { background: var(--glass); }
+.hero button { box-shadow: 0 10px 24px -10px color-mix(in srgb, var(--accent) 80%, transparent),
+  inset 0 1px 0 rgba(255, 255, 255, .35), inset 0 -1px 0 rgba(0, 0, 0, .1); }
+
+/* 押せるリスト類も同じ手応え */
+.sidebar a, .conv, .list-item { transition: background-color .25s var(--ease-out), transform .5s var(--spring); }
+.sidebar a:active, .conv:active { transform: scale(.97); transition-duration: .08s; }
+.sidebar a.active { box-shadow: inset 0 1px 0 var(--hi); }
+.conv.active { box-shadow: 0 6px 16px -8px color-mix(in srgb, var(--accent) 70%, transparent), inset 0 1px 0 rgba(255, 255, 255, .3); }
+tbody tr td { transition: background-color .2s var(--ease-out); }
+
+/* キーボードで操作しているときだけ、選択中の場所に光の輪 */
+:focus-visible { outline: 2.5px solid color-mix(in srgb, var(--accent) 65%, transparent); outline-offset: 2px; }
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; }
+
+/* --- 入力欄：くぼんだガラス。フォーカスで輪がふわっと広がる --- */
+input, select, textarea {
+  background-color: color-mix(in srgb, var(--panel-solid) 72%, transparent);
+  border: .5px solid var(--border-strong); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .05);
+  transition: border-color .25s var(--ease-out), box-shadow .45s var(--spring), background-color .25s;
+}
+input:focus, select:focus, textarea:focus {
+  background-color: var(--panel-solid);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .03), 0 0 0 4px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.composer:focus-within { box-shadow: 0 0 0 .5px var(--edge-out), var(--glass-shadow-up),
+  0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent); }
+.composer { transition: box-shadow .45s var(--ease-out); }
+.composer > textarea:focus { background-color: transparent; box-shadow: none; }
+
+/* --- スイッチ（チェックボックス）：つまみを押すと伸び、ばねで滑る --- */
+input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none; position: relative; flex-shrink: 0; cursor: pointer;
+  width: 44px; height: 26px; margin: 0; padding: 0; border: 0; border-radius: 13px;
+  background: var(--fill-strong); box-shadow: inset 0 0 0 .5px var(--edge-out);
+  transition: background-color .3s var(--ease-out);
+}
+input[type="checkbox"]::before {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; border-radius: 11px; background: #fff;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, .15), 0 1px 1px rgba(0, 0, 0, .16), 0 0 0 .5px rgba(0, 0, 0, .04);
+  transition: transform .5s var(--spring), width .25s var(--ease-out);
+}
+input[type="checkbox"]:checked { background: var(--grad); }
+input[type="checkbox"]:checked::before { transform: translateX(18px); }
+input[type="checkbox"]:active::before { width: 28px; }
+input[type="checkbox"]:checked:active::before { transform: translateX(12px); }
+input[type="checkbox"]:focus { box-shadow: inset 0 0 0 .5px var(--edge-out); }
+
+/* --- スライダー：つまみは白いガラス玉、つかむと少し膨らむ --- */
+input[type="range"] { appearance: none; -webkit-appearance: none; height: 22px; background: transparent; cursor: pointer; }
+input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--fill-strong); }
+input[type="range"]::-moz-range-track { height: 4px; border-radius: 2px; background: var(--fill-strong); }
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 24px; height: 24px; margin-top: -10px; border-radius: 50%; background: #fff;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, .18), 0 0 0 .5px rgba(0, 0, 0, .06); transition: transform .4s var(--spring);
+}
+input[type="range"]::-moz-range-thumb { width: 24px; height: 24px; border: 0; border-radius: 50%; background: #fff;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, .18), 0 0 0 .5px rgba(0, 0, 0, .06); }
+input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.15); }
+input[type="range"]:focus { box-shadow: none; }
+
+/* --- セグメント：選ばれた項目がふわっと乗る --- */
+.segment { background-color: var(--fill); box-shadow: inset 0 .5px 1px rgba(0, 0, 0, .06); }
+.segment button.on { animation: seg-on .45s var(--spring); }
+@keyframes seg-on { from { transform: scale(.94); opacity: .6; } }
+
+/* --- 画面の入れ替え：カードが少しずつ遅れて浮かび上がる --- */
+.enter { animation: enter .8s var(--spring) backwards; animation-delay: calc(var(--i, 0) * 38ms); }
+@keyframes enter { from { opacity: 0; transform: translateY(16px) scale(.985); } }
+.leave { opacity: 0 !important; transform: translateY(-6px) scale(.99) !important;
+  transition: opacity .14s var(--ease-in), transform .14s var(--ease-in) !important; }
+
+/* --- チャット：吹き出しは送った側からぽんと出る --- */
+.msg-row { animation: none; }
+.msg-row .bubble { transform-origin: 0 100%; animation: bubble-in .55s var(--spring) backwards; }
+.msg-row.me .bubble { transform-origin: 100% 100%; }
+@keyframes bubble-in { from { opacity: 0; transform: scale(.9) translateY(6px); } }
+.msg-row.me .bubble { box-shadow: 0 6px 18px -10px color-mix(in srgb, var(--accent) 80%, transparent), inset 0 1px 0 rgba(255, 255, 255, .25); }
+.bubble { box-shadow: inset 0 1px 0 var(--hi); }
+.thinking i { animation: wave 1.3s var(--ease-out) infinite; }
+@keyframes wave { 0%, 60%, 100% { opacity: .3; transform: none; } 30% { opacity: 1; transform: translateY(-3px); } }
+
+/* --- 通知：下からばねで現れ、すっと沈んで消える。押すと閉じる --- */
+.toast { cursor: pointer; animation: toast-in .6s var(--spring); }
+.toast.error { background: color-mix(in srgb, var(--danger) 88%, transparent); }
+.toast.out { animation: toast-out .22s var(--ease-in) forwards; }
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 18px) scale(.94); } }
+@keyframes toast-out { to { opacity: 0; transform: translate(-50%, 10px) scale(.97); } }
+
+/* --- バッジ：数が変わったときに軽く弾む --- */
+.badge { box-shadow: 0 2px 6px -2px color-mix(in srgb, var(--accent) 70%, transparent), inset 0 1px 0 rgba(255, 255, 255, .3); }
+
+/* 承認カードの状態は左端の細い光で示す */
+.approval { padding-left: 26px; box-shadow: inset 3px 0 0 var(--bar), 0 0 0 .5px var(--edge-out), var(--glass-shadow); }
+
+/* --- 配慮：透明度を下げる／動きを減らす設定を尊重 --- */
+@media (prefers-reduced-transparency: reduce) {
+  .card, .composer, .toast, .sidebar, .chip { background: var(--panel-solid); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  body::before { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important;
+    transition-duration: .01ms !important; scroll-behavior: auto !important;
+  }
+}
+
+/* アクセントカラーの見本：小さなガラス玉。選ばれたものに光の輪 */
+.swatches { gap: 10px; }
+.swatches .swatch {
+  width: 28px; height: 28px; padding: 0; border-radius: 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .35), rgba(255, 255, 255, 0) 55%), var(--c);
+  box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .15), inset 0 1px 0 rgba(255, 255, 255, .4), 0 2px 6px -2px var(--c);
+}
+.swatches .swatch[aria-pressed="true"] {
+  box-shadow: 0 0 0 2.5px var(--bg), 0 0 0 4.5px var(--c), inset 0 1px 0 rgba(255, 255, 255, .4);
+}
+.swatches input[type="color"] { width: 28px; height: 28px; padding: 0; border-radius: 50%; overflow: hidden; }
+.swatches input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+.swatches input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 50%; }

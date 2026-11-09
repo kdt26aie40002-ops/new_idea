@@ -77,14 +77,83 @@ function md(text) {
   return root;
 }
 
+// ---- 動きと手応え ----------------------------------------------------------
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+const coarsePointer = matchMedia("(pointer: coarse)");
+const EASE_OUT = "cubic-bezier(.22, 1, .36, 1)";
+
+// 触覚：指で操作する端末だけ、ごく短く震わせる（対応していない端末では何もしない）
+function haptic(pattern = 6) {
+  if (!coarsePointer.matches || !navigator.vibrate) return;
+  try { navigator.vibrate(pattern); } catch { /* 無視 */ }
+}
+document.addEventListener("pointerdown", (e) => {
+  if (e.pointerType === "touch" && e.target.closest("button:not(:disabled), a, .conv")) haptic(6);
+}, { passive: true });
+document.addEventListener("change", (e) => { if (e.target.matches?.('input[type="checkbox"]')) haptic(10); });
+
+// 映り込み：カーソルの位置をカードに渡し、ガラスの光沢を追従させる（1 フレームに 1 回だけ計算）
+let specEvent = null;
+document.addEventListener("pointermove", (e) => {
+  if (e.pointerType !== "mouse") return;
+  const first = !specEvent;
+  specEvent = e;
+  if (!first) return;
+  requestAnimationFrame(() => {
+    const ev = specEvent;
+    specEvent = null;
+    for (let el = ev.target.closest?.(".card, .ai-tile"); el; el = el.parentElement?.closest(".card, .ai-tile")) {
+      const r = el.getBoundingClientRect();
+      el.style.setProperty("--mx", `${ev.clientX - r.left}px`);
+      el.style.setProperty("--my", `${ev.clientY - r.top}px`);
+    }
+  });
+}, { passive: true });
+
+// 数字は 0 から数え上がる
+function countUp(el) {
+  const to = Number(el.textContent);
+  if (reducedMotion.matches || !Number.isInteger(to) || to <= 0) return;
+  const t0 = performance.now(), dur = 650 + Math.min(to, 20) * 15;
+  const step = (t) => {
+    const p = Math.min((t - t0) / dur, 1);
+    el.textContent = Math.round(to * (1 - Math.pow(1 - p, 4)));
+    if (p < 1) requestAnimationFrame(step);
+  };
+  el.textContent = "0";
+  requestAnimationFrame(step);
+}
+
+// 新しい画面のカードに、少しずつずらした登場アニメーションを付ける
+function animateIn(root) {
+  if (reducedMotion.matches) return;
+  const items = [];
+  for (const el of root.children) {
+    if (el.matches(".grid, .two-col, .teams")) items.push(...el.children); else items.push(el);
+  }
+  items.forEach((el, i) => { el.classList.add("enter"); el.style.setProperty("--i", Math.min(i, 10)); });
+  root.querySelectorAll(".ai-tile").forEach((el, i) => { el.classList.add("enter"); el.style.setProperty("--i", 5 + Math.min(i, 8)); });
+  root.querySelectorAll(".stat").forEach(countUp);
+}
+
 let toastTimer;
 function toast(msg, isError = false) {
   const t = $("#toast");
   t.textContent = msg;
   t.className = "toast" + (isError ? " error" : "");
   t.hidden = false;
+  t.style.animation = "none"; void t.offsetWidth; t.style.animation = "";  // 連続表示でも毎回現れ直す
+  haptic(isError ? [14, 60, 14] : 8);
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (t.hidden = true), isError ? 7000 : 3500);
+  toastTimer = setTimeout(hideToast, isError ? 7000 : 3500);
+}
+function hideToast() {
+  const t = $("#toast");
+  if (t.hidden) return;
+  clearTimeout(toastTimer);
+  t.classList.add("out");
+  t.addEventListener("animationend", () => { if (t.classList.contains("out")) t.hidden = true; }, { once: true });
 }
 
 async function guard(fn) {
@@ -328,7 +397,7 @@ pages.chat = {
         }) }, "🗑 履歴を消去") : null),
       log,
       h("div", { class: "composer" }, input, send)));
-    setTimeout(() => window.scrollTo(0, document.body.scrollHeight), 0);
+    this.mounted = () => window.scrollTo({ top: document.body.scrollHeight, behavior: "instant" });
   },
 };
 
@@ -577,9 +646,14 @@ pages.settings = {
     [["system", "🖥 自動"], ["light", "☀️ ライト"], ["dark", "🌙 ダーク"]].forEach(([v, l]) =>
       theme.append(h("button", { "data-v": v, class: themeVal === v ? "on" : "", onclick: () => setTheme(v) }, l)));
     const accent = h("input", { type: "color", value: ui.accent || "#0071e3" });
-    const swatches = h("div", { class: "row" }, ["#0071e3", "#4f5bd5", "#7a4fd6", "#0a7d8c", "#3a3a3c"].map((c) => {
-      const b = h("button", { class: "ghost", title: c, onclick: () => { accent.value = c; updateUi(); } }, "●");
-      b.style.color = c;
+    const current = (ui.accent || "#0071e3").toLowerCase();
+    const swatches = h("div", { class: "row swatches" }, ["#0071e3", "#4f5bd5", "#7a4fd6", "#0a7d8c", "#3a3a3c"].map((c) => {
+      const b = h("button", { class: "swatch", title: c, "aria-label": `アクセントカラー ${c}`, "aria-pressed": String(c === current),
+        onclick: () => {
+          accent.value = c; updateUi();
+          b.parentElement.querySelectorAll(".swatch").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+        } });
+      b.style.setProperty("--c", c);
       return b;
     }), accent);
     const font = h("input", { type: "range", min: 13, max: 20, value: ui.fontSize || 15 });
@@ -611,12 +685,24 @@ pages.settings = {
 };
 
 // ---- ルーティング ----------------------------------------------------------
+let currentPage = null;
 async function navigate() {
   const name = location.hash.slice(1) || "dashboard";
   const page = pages[name] || pages.dashboard;
+  // 同じ画面の再描画（承認・絞り込みなど）は動かさない。画面を移ったときだけ入れ替えの動きを付ける
+  const moved = currentPage !== page;
+  currentPage = page;
   document.querySelectorAll(".sidebar a").forEach((a) => a.classList.toggle("active", a.dataset.page === name));
   $("#page-title").textContent = page.title;
   $("#page-sub").textContent = page.sub || "";
+  let leaving = null;
+  if (moved && !reducedMotion.matches) {
+    $(".topbar").animate([{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }],
+      { duration: 500, easing: EASE_OUT });
+    const old = $("#page").querySelectorAll(".enter");
+    old.forEach((el) => el.classList.add("leave"));
+    if (old.length) leaving = sleep(140);  // 前の画面が消えるのを待つ間に、次の画面を組み立てる
+  }
   const root = h("div");
   try {
     if (!Object.keys(KIND_LABELS).length) {
@@ -627,19 +713,36 @@ async function navigate() {
   } catch (e) {
     root.append(h("div", { class: "card" }, h("span", { class: "tag danger" }, "エラー"), " ", e.message));
   }
+  await leaving;
   $("#page").replaceChildren(root);
+  if (moved) { window.scrollTo({ top: 0, behavior: "instant" }); animateIn(root); }
+  // 画面に入ってから行う処理（チャットを最下部まで送るなど）。DOM に入る前に実行すると効かない
+  page.mounted?.();
+  page.mounted = null;
+}
+
+// 数が変わったときだけ、バッジを軽く弾ませる
+function setBadge(el, n) {
+  const v = n ? String(n) : "";
+  if (el.textContent === v) return;
+  el.textContent = v;
+  if (v && !reducedMotion.matches) {
+    el.animate([{ transform: "scale(.5)" }, { transform: "scale(1.18)", offset: .55 }, { transform: "scale(1)" }],
+      { duration: 520, easing: EASE_OUT });
+  }
 }
 
 async function refreshBadges() {
   try {
     const st = await api("/api/status");
-    $("#badge-approvals").textContent = st.pending_approvals || "";
-    $("#badge-proposals").textContent = st.pending_proposals || "";
+    setBadge($("#badge-approvals"), st.pending_approvals);
+    setBadge($("#badge-proposals"), st.pending_proposals);
     $("#llm-pill").replaceChildren(h("span", { class: "dot " + (st.llm.ok ? "ok" : "bad") }),
       h("span", {}, st.llm.provider === "demo" ? "デモ LLM" : st.llm.model, h("br"), st.llm.ok ? "接続中" : "未接続"));
   } catch { /* サーバー停止中など */ }
 }
 
+$("#toast").addEventListener("click", hideToast);
 $("#toggle-sidebar").addEventListener("click", () => {
   const ui = loadUi(); ui.sidebarHidden = !ui.sidebarHidden; saveUi(ui); applyUi(ui);
 });
