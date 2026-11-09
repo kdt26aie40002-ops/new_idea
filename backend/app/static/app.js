@@ -48,6 +48,35 @@ async function api(path, opts = {}) {
   return data;
 }
 
+// AI の出力（Markdown）を最低限の見出し・リスト・太字だけ整形する。
+// 学生の文章が混ざりうるので innerHTML は使わず、テキストノードで組み立てる。
+function md(text) {
+  const inline = (s) => s.split(/(\*\*[^*]+\*\*|`[^`]+`)/).filter(Boolean).map((part) =>
+    part.startsWith("**") && part.endsWith("**") && part.length > 4 ? h("strong", {}, part.slice(2, -2))
+      : part.startsWith("`") && part.endsWith("`") && part.length > 2 ? h("code", {}, part.slice(1, -1)) : part);
+  const root = h("div", { class: "md" });
+  let list = null;
+  for (const raw of text.split("\n")) {
+    const line = raw.trimEnd();
+    const head = line.match(/^(#{1,4})\s+(.*)$/);
+    const item = line.match(/^\s*(?:[-*・]|\d+[.)])\s+(\[[ xX]\]\s+)?(.*)$/);
+    if (item) {
+      const tag = /^\s*\d/.test(line) ? "ol" : "ul";
+      if (!list || list.tagName.toLowerCase() !== tag || /^\s{2,}/.test(raw) !== list._nested) {
+        list = h(tag, { start: tag === "ol" ? line.match(/\d+/)[0] : null });
+        list._nested = /^\s{2,}/.test(raw); root.append(list);
+      }
+      list.append(h("li", { class: item[1] ? "todo" + (/x/i.test(item[1]) ? " done" : "") : null }, inline(item[2])));
+      continue;
+    }
+    if (line.trim() && list && /^\s{2,}/.test(raw)) { list.lastChild?.append(h("br"), ...inline(line.trim())); continue; }
+    list = null;
+    if (head) root.append(h("h4", {}, inline(head[2])));
+    else if (line.trim()) root.append(h("p", {}, inline(line)));
+  }
+  return root;
+}
+
 let toastTimer;
 function toast(msg, isError = false) {
   const t = $("#toast");
@@ -111,7 +140,8 @@ pages.dashboard = {
     const greet = hour < 11 ? "おはようございます" : hour < 18 ? "こんにちは" : "おつかれさまです";
     root.append(
       h("div", { class: "hero" },
-        h("h2", {}, `${greet}、佐藤先生`),
+        h("div", { class: "eyebrow" }, new Date().toLocaleDateString("ja-JP", { month: "long", day: "numeric", weekday: "long" })),
+        h("h2", {}, `${greet}、`, h("span", { class: "ai-word" }, "佐藤先生")),
         h("p", {}, st.unanswered ? `学生からの未回答の質問が ${st.unanswered} 件あります。返信案を用意しましょうか？`
           : "未回答の質問はありません。落ち着いた一日になりそうです。"),
         h("button", { onclick: () => { sessionStorage.setItem("prefill", "学生からの未回答の質問を確認して"); location.hash = "#chat"; } },
@@ -144,6 +174,7 @@ pages.dashboard = {
       busy = true;
       buttons.forEach((b) => (b.disabled = true));
       result.hidden = false;
+      result.classList.add("loading");
       result.replaceChildren(h("div", { class: "row" }, h("b", {}, title), h("span", { class: "thinking" }, h("i"), h("i"), h("i"))),
         h("div", { class: "muted" }, st.llm.provider === "ollama" ? "ローカル LLM で考えています（数秒〜1分ほど）…" : "作成中…"));
       try {
@@ -155,7 +186,7 @@ pages.dashboard = {
           h("div", { class: "row" }, h("b", {}, title), h("span", { class: "tag accent" }, r.meta.agent),
             r.meta.llm === "demo" ? h("span", { class: "tag warn" }, "デモ LLM") : null, h("span", { class: "spacer" }),
             h("button", { class: "ghost", onclick: () => { result.hidden = true; } }, "閉じる")),
-          h("div", { class: "pre ai-output" }, r.reply),
+          h("div", { class: "ai-output" }, md(r.reply)),
           h("div", { class: "row" }, copy,
             r.meta.approval_ids.length ? h("button", { onclick: () => { location.hash = "#approvals"; } },
               icon("check"), `承認待ちを確認（${r.meta.approval_ids.length} 件）`) : null,
@@ -167,11 +198,12 @@ pages.dashboard = {
       } finally {
         buttons.forEach((b) => (b.disabled = false));
         busy = false;
+        result.classList.remove("loading");
       }
     });
     const btn = (label, onclick, cls = "") => { const b = h("button", { class: cls, onclick }, label); buttons.push(b); return b; };
-    const tile = (emoji, title, desc, ...controls) => h("div", { class: "ai-tile" },
-      h("div", { class: "ai-tile-head" }, h("span", { class: "ai-emoji" }, emoji), h("b", {}, title)),
+    const tile = ([iconId, tone], title, desc, ...controls) => h("div", { class: "ai-tile" },
+      h("div", { class: "ai-tile-head" }, h("span", { class: `ai-emoji ${tone}` }, icon(iconId)), h("b", {}, title)),
       h("div", { class: "muted" }, desc), h("div", { class: "row ai-controls" }, ...controls));
     const convSelect = (kinds) => h("select", {}, convs.filter((c) => kinds.includes(c.kind)).map((c) => h("option", { value: c.id }, c.title)));
     const sumConv = convSelect(["chat", "channel", "meeting"]);
@@ -187,23 +219,23 @@ pages.dashboard = {
     ask.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) askRun(); });
     topic.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) materialRun(); });
 
-    return h("div", { class: "card" },
-      h("div", { class: "row" }, h("h3", {}, "AI でできること"), h("span", { class: "spacer" }),
+    return h("div", { class: "card ai-card" },
+      h("div", { class: "row" }, h("h3", {}, h("span", { class: "ai-word" }, "AI"), " でできること"), h("span", { class: "spacer" }),
         h("span", { class: "muted" }, "送信は必ず承認待ちを通ります")),
       h("div", { class: "ai-grid" },
-        tile("🗓", "今日のブリーフィング", "未回答の質問・承認待ち・締め切りから、今日やることを優先順に",
+        tile(["calendar", "red"], "今日のブリーフィング", "未回答の質問・承認待ち・締め切りから、今日やることを優先順に",
           btn("まとめる", () => run("今日のブリーフィング", { action: "briefing" }))),
-        tile("✉️", "未回答の質問に返信案", `${st.unanswered} 件の質問に下書きを作り、承認待ちに入れます`,
+        tile(["mail", "blue"], "未回答の質問に返信案", `${st.unanswered} 件の質問に下書きを作り、承認待ちに入れます`,
           btn("返信案を作る", () => run("未回答の質問への返信案", { action: "unanswered" }))),
-        tile("📊", "質問の傾向分析", "学生のつまずき・登録すべき知識・クラスへの連絡案",
+        tile(["chart", "purple"], "質問の傾向分析", "学生のつまずき・登録すべき知識・クラスへの連絡案",
           btn("分析する", () => run("学生の質問の傾向分析", { action: "insights" }))),
-        tile("📝", "会話を要約", "Teams のチャット・チャネル・会議を箇条書きに",
+        tile(["list", "orange"], "会話を要約", "Teams のチャット・チャネル・会議を箇条書きに",
           sumConv, btn("要約", () => run(`要約：${sumConv.selectedOptions[0]?.text || ""}`, { action: "summarize", conversation_id: sumConv.value }))),
-        tile("🗒", "議事録を作成", "参加者・決定事項・ToDo を整理",
+        tile(["doc", "green"], "議事録を作成", "参加者・決定事項・ToDo を整理",
           meeting, btn("作成", () => run(`議事録：${meeting.selectedOptions[0]?.text || ""}`, { action: "minutes", conversation_id: meeting.value }))),
-        tile("📚", "教材をつくる", "授業資料・課題・小テストの下書き", kind, topic, btn("作成", materialRun)),
+        tile(["book", "pink"], "教材をつくる", "授業資料・課題・小テストの下書き", kind, topic, btn("作成", materialRun)),
         h("div", { class: "ai-tile wide" },
-          h("div", { class: "ai-tile-head" }, h("span", { class: "ai-emoji" }, "💬"), h("b", {}, "ひとこと質問"),
+          h("div", { class: "ai-tile-head" }, h("span", { class: "ai-emoji teal" }, icon("chat")), h("b", {}, "ひとこと質問"),
             h("span", { class: "muted" }, "記憶をもとに答えます")),
           h("div", { class: "row ai-controls" }, ask, btn("聞く", askRun)))),
       result);
@@ -237,7 +269,7 @@ pages.chat = {
 
     const renderMsg = (m) => {
       const isMe = m.role === "user";
-      const bubble = h("div", { class: "bubble" }, h("div", { class: "pre" }, m.text));
+      const bubble = h("div", { class: "bubble" }, isMe ? h("div", { class: "pre" }, m.text) : md(m.text));
       if (!isMe) {
         const meta = m.meta || {};
         bubble.append(h("div", { class: "bubble-meta" },
@@ -544,8 +576,8 @@ pages.settings = {
     const setTheme = (v) => { themeVal = v; [...theme.children].forEach((b) => b.classList.toggle("on", b.dataset.v === v)); updateUi(); };
     [["system", "🖥 自動"], ["light", "☀️ ライト"], ["dark", "🌙 ダーク"]].forEach(([v, l]) =>
       theme.append(h("button", { "data-v": v, class: themeVal === v ? "on" : "", onclick: () => setTheme(v) }, l)));
-    const accent = h("input", { type: "color", value: ui.accent || "#5b5bd6" });
-    const swatches = h("div", { class: "row" }, ["#5b5bd6", "#0ea5e9", "#10b981", "#f97316", "#ec4899", "#8b5cf6"].map((c) => {
+    const accent = h("input", { type: "color", value: ui.accent || "#0071e3" });
+    const swatches = h("div", { class: "row" }, ["#0071e3", "#4f5bd5", "#7a4fd6", "#0a7d8c", "#3a3a3c"].map((c) => {
       const b = h("button", { class: "ghost", title: c, onclick: () => { accent.value = c; updateUi(); } }, "●");
       b.style.color = c;
       return b;
