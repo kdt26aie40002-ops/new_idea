@@ -118,3 +118,24 @@ def test_dashboard_briefing_lists_pending(client):
 ])
 def test_dashboard_ai_rejects_bad_input(client, body):
     assert client.post("/api/dashboard/ai", json=body).status_code in (400, 422)
+
+
+def test_user_name_defaults_to_teams_name(client):
+    assert client.get("/api/me").json() == {"name": "佐藤先生", "teams_name": "佐藤先生", "custom": False}
+
+
+def test_user_name_change_and_reset(client, services):
+    r = client.put("/api/settings", json={"user_name": "  佐藤\n花子 先生 "})
+    assert r.json()["user_name"] == "佐藤 花子 先生"  # 改行・余分な空白はまとめる
+    assert client.get("/api/me").json()["name"] == "佐藤 花子 先生"
+    assert services.agent().ctx.teacher_name() == "佐藤 花子 先生"  # AI の名乗りにも反映
+    # Teams 上の名前は変わらない
+    assert {u["id"]: u["name"] for u in client.get("/api/teams/users").json()}["t-sato"] == "佐藤先生"
+    client.put("/api/settings", json={"user_name": ""})
+    assert client.get("/api/me").json() == {"name": "佐藤先生", "teams_name": "佐藤先生", "custom": False}
+
+
+@pytest.mark.parametrize("bad", ["x" * 41, "佐藤\u0000先生", "佐藤‮先生"])
+def test_user_name_rejects_invalid(client, bad):
+    assert client.put("/api/settings", json={"user_name": bad}).status_code == 400
+    assert client.get("/api/me").json()["custom"] is False

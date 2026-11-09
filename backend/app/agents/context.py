@@ -11,6 +11,16 @@ from ..settings import AppSettings
 from ..teams import TeamsAdapter
 
 
+def resolve_teacher_name(settings: AppSettings, teams: TeamsAdapter) -> str:
+    """設定の名前があればそれを、なければ Teams の表示名を使う。"""
+    if settings.user_name:
+        return settings.user_name
+    for u in teams.list_users():
+        if u["id"] == settings.teacher_id:
+            return u["name"]
+    return settings.teacher_id
+
+
 @dataclass
 class AgentContext:
     """エージェントに渡す道具一式。
@@ -29,10 +39,7 @@ class AgentContext:
     audit: AuditLog
 
     def teacher_name(self) -> str:
-        for u in self.teams.list_users():
-            if u["id"] == self.settings.teacher_id:
-                return u["name"]
-        return self.settings.teacher_id
+        return resolve_teacher_name(self.settings, self.teams)
 
     def recall(self, query: str) -> dict[str, Any]:
         """プロンプト用に記憶を集める。basic/preference/judgment は常に、knowledge は検索で。"""
