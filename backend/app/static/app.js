@@ -103,8 +103,9 @@ pages.dashboard = {
   title: "ダッシュボード",
   sub: "今日の状況をひと目で",
   async render(root) {
-    const [st, approvals, audit] = await Promise.all([
+    const [st, approvals, audit, convs] = await Promise.all([
       api("/api/status"), api("/api/approvals?status=pending"), api("/api/audit?limit=6"),
+      api("/api/teams/conversations"),
     ]);
     const hour = new Date().getHours();
     const greet = hour < 11 ? "おはようございます" : hour < 18 ? "こんにちは" : "おつかれさまです";
@@ -121,6 +122,7 @@ pages.dashboard = {
         statCard("spark", "", "改善提案", st.pending_proposals, "承認すると記憶に反映", "#proposals"),
         statCard("brain", "green", "AI", st.llm.ok ? "接続中" : "未接続",
           st.llm.provider === "demo" ? "デモ LLM" : `Ollama · ${st.llm.model}`, "#settings")),
+      this.aiPanel(st, convs),
       h("div", { class: "two-col" },
         h("div", { class: "card" }, h("h3", {}, "承認待ちの操作"),
           approvals.length ? approvals.slice(0, 5).map((a) =>
@@ -130,6 +132,81 @@ pages.dashboard = {
             h("div", { class: "empty" }, h("div", { class: "big" }, "✨"), "承認待ちはありません")),
         h("div", { class: "card" }, h("h3", {}, "最近のアクティビティ"), auditTable(audit, true))),
     );
+  },
+
+  // AI にワンクリックで頼める操作。結果は AI チャットの履歴にも残る（評価・続きの会話ができる）
+  aiPanel(st, convs) {
+    const result = h("div", { class: "ai-result", hidden: true });
+    const buttons = [];
+    let busy = false;
+    const run = (title, body, path = "/api/dashboard/ai") => guard(async () => {
+      if (busy) return;
+      busy = true;
+      buttons.forEach((b) => (b.disabled = true));
+      result.hidden = false;
+      result.replaceChildren(h("div", { class: "row" }, h("b", {}, title), h("span", { class: "thinking" }, h("i"), h("i"), h("i"))),
+        h("div", { class: "muted" }, st.llm.provider === "ollama" ? "ローカル LLM で考えています（数秒〜1分ほど）…" : "作成中…"));
+      try {
+        const r = await api(path, { method: "POST", body });
+        const copy = h("button", { class: "ghost", onclick: () => guard(async () => {
+          await navigator.clipboard.writeText(r.reply); toast("コピーしました。");
+        }) }, "コピー");
+        result.replaceChildren(
+          h("div", { class: "row" }, h("b", {}, title), h("span", { class: "tag accent" }, r.meta.agent),
+            r.meta.llm === "demo" ? h("span", { class: "tag warn" }, "デモ LLM") : null, h("span", { class: "spacer" }),
+            h("button", { class: "ghost", onclick: () => { result.hidden = true; } }, "閉じる")),
+          h("div", { class: "pre ai-output" }, r.reply),
+          h("div", { class: "row" }, copy,
+            r.meta.approval_ids.length ? h("button", { onclick: () => { location.hash = "#approvals"; } },
+              icon("check"), `承認待ちを確認（${r.meta.approval_ids.length} 件）`) : null,
+            h("button", { class: "ghost", onclick: () => { location.hash = "#chat"; } }, icon("chat"), "チャットで続ける"),
+            h("span", { class: "spacer" }), h("span", { class: "muted" }, "AI チャットの履歴にも保存しました")));
+        refreshBadges();
+      } catch (e) {
+        result.replaceChildren(h("span", { class: "tag danger" }, "エラー"), " ", e.message);
+      } finally {
+        buttons.forEach((b) => (b.disabled = false));
+        busy = false;
+      }
+    });
+    const btn = (label, onclick, cls = "") => { const b = h("button", { class: cls, onclick }, label); buttons.push(b); return b; };
+    const tile = (emoji, title, desc, ...controls) => h("div", { class: "ai-tile" },
+      h("div", { class: "ai-tile-head" }, h("span", { class: "ai-emoji" }, emoji), h("b", {}, title)),
+      h("div", { class: "muted" }, desc), h("div", { class: "row ai-controls" }, ...controls));
+    const convSelect = (kinds) => h("select", {}, convs.filter((c) => kinds.includes(c.kind)).map((c) => h("option", { value: c.id }, c.title)));
+    const sumConv = convSelect(["chat", "channel", "meeting"]);
+    const meeting = convSelect(["meeting"]);
+    const topic = h("input", { placeholder: "例：for文", class: "spacer" });
+    const kind = h("select", {}, ["授業資料", "課題", "小テスト"].map((k) => h("option", { value: k }, k)));
+    const ask = h("input", { placeholder: "例：レポートの提出期限は？", class: "spacer" });
+    const askRun = () => ask.value.trim() && run("AI に質問", { text: ask.value.trim() }, "/api/chat");
+    const materialRun = () => {
+      if (!topic.value.trim()) return toast("テーマを入力してください。", true);
+      run(`${kind.value}：${topic.value.trim()}`, { action: "material", topic: topic.value.trim(), kind: kind.value });
+    };
+    ask.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) askRun(); });
+    topic.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) materialRun(); });
+
+    return h("div", { class: "card" },
+      h("div", { class: "row" }, h("h3", {}, "AI でできること"), h("span", { class: "spacer" }),
+        h("span", { class: "muted" }, "送信は必ず承認待ちを通ります")),
+      h("div", { class: "ai-grid" },
+        tile("🗓", "今日のブリーフィング", "未回答の質問・承認待ち・締め切りから、今日やることを優先順に",
+          btn("まとめる", () => run("今日のブリーフィング", { action: "briefing" }))),
+        tile("✉️", "未回答の質問に返信案", `${st.unanswered} 件の質問に下書きを作り、承認待ちに入れます`,
+          btn("返信案を作る", () => run("未回答の質問への返信案", { action: "unanswered" }))),
+        tile("📊", "質問の傾向分析", "学生のつまずき・登録すべき知識・クラスへの連絡案",
+          btn("分析する", () => run("学生の質問の傾向分析", { action: "insights" }))),
+        tile("📝", "会話を要約", "Teams のチャット・チャネル・会議を箇条書きに",
+          sumConv, btn("要約", () => run(`要約：${sumConv.selectedOptions[0]?.text || ""}`, { action: "summarize", conversation_id: sumConv.value }))),
+        tile("🗒", "議事録を作成", "参加者・決定事項・ToDo を整理",
+          meeting, btn("作成", () => run(`議事録：${meeting.selectedOptions[0]?.text || ""}`, { action: "minutes", conversation_id: meeting.value }))),
+        tile("📚", "教材をつくる", "授業資料・課題・小テストの下書き", kind, topic, btn("作成", materialRun)),
+        h("div", { class: "ai-tile wide" },
+          h("div", { class: "ai-tile-head" }, h("span", { class: "ai-emoji" }, "💬"), h("b", {}, "ひとこと質問"),
+            h("span", { class: "muted" }, "記憶をもとに答えます")),
+          h("div", { class: "row ai-controls" }, ask, btn("聞く", askRun)))),
+      result);
   },
 };
 

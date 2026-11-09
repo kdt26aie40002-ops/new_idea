@@ -151,6 +151,21 @@ a.card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
 .hero button { background: rgba(255, 255, 255, .95); color: var(--accent); box-shadow: none; }
 .hero button:hover { background: #fff; }
 
+/* ダッシュボードの AI パネル */
+[hidden] { display: none !important; }
+.ai-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; margin-top: 6px; }
+.ai-tile { display: flex; flex-direction: column; gap: 6px; padding: 14px; border-radius: 14px;
+  background: var(--sunken); border: 1px solid var(--border); }
+.ai-tile.wide { grid-column: 1 / -1; }
+.ai-tile-head { display: flex; align-items: center; gap: 8px; }
+.ai-emoji { font-size: 1.2em; }
+.ai-controls { margin-top: auto; padding-top: 4px; }
+.ai-controls select { max-width: 100%; }
+.ai-controls input { min-width: 0; }
+.ai-result { margin-top: 16px; padding: 16px; border-radius: 14px; border: 1px solid var(--border-strong);
+  background: var(--panel-solid); display: grid; gap: 12px; }
+.ai-output { max-height: 480px; overflow-y: auto; }
+
 .muted { color: var(--muted); font-size: .87em; }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .spacer { flex: 1; }

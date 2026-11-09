@@ -105,6 +105,11 @@ class ActionGateway(_Base):
         return self.db.one("SELECT 1 FROM approvals WHERE origin = ? AND status IN "
                            "('pending', 'approved', 'executed')", (origin,)) is not None
 
+    def pending_summaries(self) -> list[str]:
+        """承認待ちの概要だけを返す（読み取りのみ。承認・却下はできない）。"""
+        return [r["summary"] for r in self.db.query(
+            "SELECT summary FROM approvals WHERE status = 'pending' ORDER BY id")]
+
     def propose(self, action_type: str, payload: dict[str, Any], origin: str) -> dict[str, Any]:
         clean = self._validate(action_type, payload)
         violations = self._violations(action_type, clean)

@@ -38,6 +38,10 @@ class MainAgent:
     def route(self, text: str) -> str:
         if re.search(r"未回答|未返信|返事して(い)?ない|質問を確認", text):
             return "unanswered"
+        if re.search(r"ブリーフィング|今日(やる|の予定|のタスク)|やることリスト", text):
+            return "briefing"
+        if re.search(r"傾向|よくある質問|つまず", text):
+            return "insights"
         if "議事録" in text:
             return "minutes"
         if re.search(r"要約|まとめて|まとめる", text):
@@ -62,11 +66,38 @@ class MainAgent:
     def handle(self, text: str, history: list[dict[str, str]] | None = None) -> AgentResult:
         route = self.route(text)
         self.ctx.audit.record("agent", "task.routed", route=route)
-        result = getattr(self, f"_do_{route}")(text, history or [])
-        if route != "general":
-            self.ctx.memory.add("episode", f"依頼「{text[:60]}」を {result.agent} が処理（{route}）",
+        return self._finish(text, getattr(self, f"_do_{route}")(text, history or []))
+
+    def run_action(self, action: str, label: str, conversation_id: str | None = None,
+                   topic: str = "", kind: str = "授業資料") -> AgentResult:
+        """ダッシュボードのボタンから直接タスクを実行する（文章からの振り分けを経由しない）。"""
+        self.ctx.audit.record("agent", "task.dashboard", action=action)
+        if action in ("summarize", "minutes"):
+            if not conversation_id:
+                raise ValueError("会話を選んでください")
+            out = getattr(self.secretary, action)(conversation_id)  # 存在しない会話は ValueError
+            result = AgentResult(out, action, SecretaryAgent.role)
+        elif action == "material":
+            if not topic.strip():
+                raise ValueError("テーマを入力してください")
+            result = self._do_material(f"{topic}の{kind}を作って", [])
+        elif action in ("briefing", "insights", "unanswered"):
+            result = getattr(self, f"_do_{action}")(label, [])
+        else:
+            raise ValueError(f"未知の操作: {action}")
+        return self._finish(label, result)
+
+    def _finish(self, text: str, result: AgentResult) -> AgentResult:
+        if result.route != "general":
+            self.ctx.memory.add("episode", f"依頼「{text[:60]}」を {result.agent} が処理（{result.route}）",
                                 source="agent:main")
         return result
+
+    def _do_briefing(self, text: str, history: list) -> AgentResult:
+        return AgentResult(self.secretary.briefing(), "briefing", SecretaryAgent.role)
+
+    def _do_insights(self, text: str, history: list) -> AgentResult:
+        return AgentResult(self.secretary.insights(), "insights", SecretaryAgent.role)
 
     def _do_unanswered(self, text: str, history: list) -> AgentResult:
         out = self.secretary.check_unanswered()
