@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from .agents.context import resolve_teacher_name
 from .db import dumps, now_iso
 from .improvement import ImprovementError
 from .llm import LLMUnavailableError
@@ -127,6 +128,12 @@ def create_app(services: Services | None = None, data_dir: Path | None = None) -
             "pending_proposals": len(s.improvement.list_proposals("pending")),
             "unanswered": len(s.teams.unanswered_questions(s.settings.get().teacher_id)),
         }
+
+    @app.get("/api/me")
+    def me() -> dict[str, Any]:
+        settings = s.settings.get()
+        teams_name = resolve_teacher_name(settings.model_copy(update={"user_name": ""}), s.teams)
+        return {"name": settings.user_name or teams_name, "teams_name": teams_name, "custom": bool(settings.user_name)}
 
     @app.get("/api/settings")
     def get_settings() -> dict[str, Any]:

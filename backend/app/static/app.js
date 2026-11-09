@@ -189,6 +189,11 @@ function applyUi(ui = loadUi()) {
 // ---- ページ ---------------------------------------------------------------
 const pages = {};
 let KIND_LABELS = {};
+let ME = { name: "", teams_name: "", custom: false };  // 先生の表示名（設定で変更可）
+const initial = (name) => [...(name || "?")][0];
+// 呼びかけ用に「さん」を付ける。すでに敬称で終わる名前（佐藤先生など）には付けない
+const HONORIFIC_RE = /(さん|先生|様|さま|くん|君|ちゃん|氏|殿)$/;
+const honorific = (name) => (!name || HONORIFIC_RE.test(name) ? name : `${name}さん`);
 
 function statCard(iconId, tone, label, value, foot, href) {
   return h("a", { class: "card stat-card", href, style: null },
@@ -210,7 +215,7 @@ pages.dashboard = {
     root.append(
       h("div", { class: "hero" },
         h("div", { class: "eyebrow" }, new Date().toLocaleDateString("ja-JP", { month: "long", day: "numeric", weekday: "long" })),
-        h("h2", {}, `${greet}、`, h("span", { class: "ai-word" }, "佐藤先生")),
+        h("h2", {}, `${greet}、`, h("span", { class: "ai-word" }, honorific(ME.name))),
         h("p", {}, st.unanswered ? `学生からの未回答の質問が ${st.unanswered} 件あります。返信案を用意しましょうか？`
           : "未回答の質問はありません。落ち着いた一日になりそうです。"),
         h("button", { onclick: () => { sessionStorage.setItem("prefill", "学生からの未回答の質問を確認して"); location.hash = "#chat"; } },
@@ -348,7 +353,7 @@ pages.chat = {
           h("span", { class: "spacer" }),
           m.id ? rateButtons(m) : null));
       }
-      return h("div", { class: "msg-row" + (isMe ? " me" : "") }, avatar(isMe ? "佐" : "AI", isMe ? "user" : "ai", isMe ? "佐" : "AI"), bubble);
+      return h("div", { class: "msg-row" + (isMe ? " me" : "") }, avatar(isMe ? ME.name : "AI", isMe ? "user" : "ai", isMe ? initial(ME.name) : "AI"), bubble);
     };
 
     const autosize = () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 220) + "px"; };
@@ -383,7 +388,7 @@ pages.chat = {
     history.forEach((m) => log.append(renderMsg(m)));
     if (!history.length) {
       log.append(h("div", { class: "empty" }, h("div", { class: "big" }, "👋"),
-        h("div", {}, "こんにちは。佐藤先生の「第二の自分」です。"),
+        h("div", {}, `こんにちは。${honorific(ME.name)}の「第二の自分」です。`),
         h("div", { class: "muted" }, "下の例から選ぶか、自由に話しかけてください。送信などの操作は必ず先生の承認を待ちます。")));
     }
     const prefill = sessionStorage.getItem("prefill");
@@ -631,7 +636,7 @@ pages.audit = {
 
 pages.settings = {
   title: "設定",
-  sub: "AI モデルと表示のカスタマイズ",
+  sub: "プロフィール・AI モデル・表示のカスタマイズ",
   async render(root) {
     const [s, st] = await Promise.all([api("/api/settings"), api("/api/status")]);
     const provider = h("select", {}, h("option", { value: "demo", selected: s.llm_provider === "demo" }, "デモ LLM（テンプレート応答）"),
@@ -664,6 +669,32 @@ pages.settings = {
     }
     [accent, font, sidebar].forEach((el) => el.addEventListener("input", updateUi));
 
+    // プロフィール：入力に合わせてアバターと名前がその場で変わる
+    const nameIn = h("input", { value: s.user_name, placeholder: ME.teams_name, maxlength: 40, class: "spacer",
+      "aria-label": "表示名" });
+    const previewAvatar = h("div", { class: "avatar user profile-avatar" });
+    const previewName = h("div", { class: "profile-name" });
+    const updatePreview = () => {
+      const n = nameIn.value.trim() || ME.teams_name;
+      previewAvatar.textContent = initial(n);
+      previewName.textContent = honorific(n);  // 実際に呼びかけられる形で見せる
+    };
+    nameIn.addEventListener("input", updatePreview);
+    updatePreview();
+    const saveName = () => guard(async () => {
+      await api("/api/settings", { method: "PUT", body: { user_name: nameIn.value } });
+      ME = await api("/api/me");
+      nameIn.value = ME.custom ? ME.name : "";
+      updatePreview();
+      toast(ME.custom ? `表示名を「${ME.name}」にしました。` : `Teams の名前（${ME.name}）に戻しました。`);
+    });
+    nameIn.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) saveName(); });
+    root.append(h("div", { class: "card profile" },
+      previewAvatar,
+      h("div", { class: "spacer" },
+        h("h3", {}, "プロフィール"), previewName,
+        h("div", { class: "row profile-edit" }, nameIn, h("button", { onclick: saveName }, "保存")),
+        h("p", { class: "muted" }, `ダッシュボードのあいさつやチャットでは「さん」を付けて呼びかけます（「先生」などで終わる名前には付けません）。AI が下書きで名乗るときは、そのままの名前を使います。空にすると Teams の名前（${ME.teams_name}）に戻ります。Teams 上の表示名は変わりません。`))));
     root.append(h("div", { class: "two-col" },
       h("div", { class: "card" }, h("h3", {}, "AI モデル"),
         h("div", { class: "row" }, h("span", { class: "dot " + (st.llm.ok ? "ok" : "bad") }), h("span", {}, st.llm.message)),
@@ -709,6 +740,7 @@ async function navigate() {
       const kinds = await api("/api/memory-kinds");
       KIND_LABELS = Object.fromEntries(kinds.map((k) => [k.kind, k.label]));
     }
+    if (!ME.name) ME = await api("/api/me");
     await page.render(root);
   } catch (e) {
     root.append(h("div", { class: "card" }, h("span", { class: "tag danger" }, "エラー"), " ", e.message));

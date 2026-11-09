@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .db import Database
 
@@ -21,7 +21,18 @@ class AppSettings(BaseModel):
     ollama_model: str = "qwen3:8b"
     ollama_timeout_sec: float = Field(default=120.0, ge=5, le=600)
     teacher_id: str = "t-sato"
+    # 画面と AI の名乗りで使う名前。空なら Teams の表示名を使う（Teams 上の名前は変わらない）
+    user_name: str = Field(default="", max_length=40)
     memory_top_k: int = Field(default=4, ge=1, le=20)
+
+
+    @field_validator("user_name")
+    @classmethod
+    def _clean_name(cls, v: str) -> str:
+        v = " ".join(v.split())  # 改行・連続空白をまとめる（AI への指示文に名前を埋め込むため）
+        if any(not c.isprintable() for c in v):
+            raise ValueError("名前に使えない文字が含まれています")
+        return v
 
 
 class SettingsStore:
