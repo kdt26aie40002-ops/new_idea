@@ -101,17 +101,35 @@ ollama list        # qwen3:8b が表示されれば OK
 
 ## 起動
 
+Python 3（Windows は `py` コマンドが使えること）と Git が必要です。
+
+**1. ダウンロード（初回のみ）**
+
 ```powershell
-# 初回のみ
+git clone https://github.com/kdt26aie40002-ops/new_idea.git
+cd new_idea
+```
+
+**2. 必要なライブラリを入れる（初回のみ）**
+
+```powershell
 py -m venv .venv
 .venv\Scripts\python -m pip install -r backend\requirements.txt
+```
 
-# 起動（http://127.0.0.1:8765 をブラウザで開く）
+**3. 起動する**（毎回。`new_idea` フォルダで実行）
+
+```powershell
 cd backend
 ..\.venv\Scripts\python run.py
 ```
 
-macOS / Linux は `python3 -m venv .venv`、`.venv/bin/python` に読み替えてください。
+**4. ブラウザで http://127.0.0.1:8765 を開く**
+
+止めるときはターミナルで `Ctrl + C` を押します。
+Ollama を使う場合は、起動前に「[はじめに：Ollama のダウンロード](#はじめにollama-のダウンロード)」を済ませておき、アプリの **設定 → AI モデル → 使用する LLM** で「Ollama（ローカル LLM）」を選んで保存してください。
+
+macOS / Linux は `py -m venv .venv` を `python3 -m venv .venv` に、`.venv\Scripts\python` を `.venv/bin/python` に読み替えてください。
 
 - データは `data/teacher_agent.db` に保存されます。消すと初期データ（デモ用の学生・会話・記憶）から始め直せます。
 - 別の場所にデータを置くときは環境変数 `TEACHER_AGENT_DATA_DIR`、ポートを変えるときは `TEACHER_AGENT_PORT` を指定します。
